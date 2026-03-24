@@ -1,6 +1,6 @@
 # FinPal
 
-A local-first personal finance dashboard. Track your net worth, investments, debts, and goals — with AI-powered analysis and real market data. Everything runs on your machine; your financial data never leaves your server.
+A local-first personal finance dashboard. Track your net worth, investments, debts, and goals — with AI-powered analysis and real market data. AI analysis is powered by Anthropic (and is opt-in) - the data might be processed as per Anthropic's data handling policy.
 
 ## Features
 
@@ -94,6 +94,8 @@ DATA_DIR=/data SESSION_SECRET=<random> npm start
 <img width="1440" height="756" alt="image" src="https://github.com/user-attachments/assets/27af76e3-8c06-4355-adc6-135bbbafc82b" />
 
 <img width="1440" height="710" alt="image" src="https://github.com/user-attachments/assets/cdbd1a39-1f7e-4357-b26b-0d6e1a29ffac" />
+
+Note: This project is for educational purposes only.
 
 
 
