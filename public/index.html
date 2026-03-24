@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinPal – Personal Financial Advisor</title>
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"
+    onerror="window._rechartsLoadFailed=true;console.error('Recharts CDN failed')"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; }
+    #root { min-height: 100vh; }
+    .app { display: flex; flex-direction: column; min-height: 100vh; }
+    .header { background: #1a1f2e; border-bottom: 1px solid #2d3748; padding: 10px 24px; display: flex; align-items: center; gap: 16px; }
+    .header h1 { font-size: 18px; font-weight: 700; color: #63b3ed; letter-spacing: -0.5px; }
+    .header-stats { display: flex; gap: 24px; margin-left: auto; }
+    .header-stat .lbl { font-size: 10px; color: #718096; text-transform: uppercase; }
+    .header-stat .val { font-size: 15px; font-weight: 600; }
+    .tabs { background: #1a1f2e; border-bottom: 1px solid #2d3748; display: flex; overflow-x: auto; padding: 0 16px; }
+    .tab { padding: 11px 16px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: #718096; white-space: nowrap; transition: all 0.15s; }
+    .tab:hover { color: #e2e8f0; }
+    .tab.active { color: #63b3ed; border-bottom-color: #63b3ed; }
+    .content { flex: 1; padding: 24px; overflow-y: auto; max-width: 1400px; width: 100%; margin: 0 auto; }
+    .card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 8px; padding: 20px; }
+    .card-sm { padding: 14px; }
+    .card-title { font-size: 11px; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .card-value { font-size: 22px; font-weight: 700; }
+    .grid { display: grid; gap: 16px; }
+    .g2 { grid-template-columns: repeat(2, 1fr); }
+    .g3 { grid-template-columns: repeat(3, 1fr); }
+    .g4 { grid-template-columns: repeat(4, 1fr); }
+    table { width: 100%; border-collapse: collapse; }
+    th { font-size: 11px; color: #718096; text-transform: uppercase; padding: 8px 12px; text-align: left; border-bottom: 1px solid #2d3748; white-space: nowrap; }
+    td { padding: 9px 12px; border-bottom: 1px solid #1e2536; font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .btn { padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; transition: opacity 0.15s; }
+    .btn:hover { opacity: 0.82; }
+    .btn-primary { background: #3182ce; color: #fff; }
+    .btn-secondary { background: #2d3748; color: #e2e8f0; }
+    .btn-danger { background: #9b2c2c; color: #fff; }
+    .btn-success { background: #276749; color: #fff; }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+    .btn-lg { padding: 10px 24px; font-size: 14px; }
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: 11px; color: #a0aec0; margin-bottom: 4px; }
+    input, select, textarea { width: 100%; background: #0f1117; border: 1px solid #2d3748; border-radius: 6px; color: #e2e8f0; padding: 8px 10px; font-size: 13px; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #3182ce; }
+    select option { background: #1a1f2e; }
+    .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: #0f1117; }
+    .auth-box { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 36px; width: 100%; max-width: 400px; }
+    .auth-logo { font-size: 28px; font-weight: 800; color: #63b3ed; letter-spacing: -1px; margin-bottom: 4px; }
+    .auth-sub { color: #718096; font-size: 13px; margin-bottom: 28px; line-height: 1.6; }
+    .auth-tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid #2d3748; }
+    .auth-tab { padding: 8px 16px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: #718096; }
+    .auth-tab.active { color: #63b3ed; border-bottom-color: #63b3ed; }
+    .auth-error { background: #4a1c1c; color: #fc8181; padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
+    .wizard-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .wizard-box { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 32px; width: 100%; max-width: 600px; }
+    .wizard-title { font-size: 22px; font-weight: 700; color: #63b3ed; margin-bottom: 4px; }
+    .wizard-sub { color: #718096; font-size: 13px; margin-bottom: 24px; }
+    .progress-dots { display: flex; gap: 6px; margin-bottom: 28px; }
+    .dot { width: 28px; height: 4px; border-radius: 2px; background: #2d3748; }
+    .dot.done { background: #3182ce; }
+    .dot.active { background: #63b3ed; }
+    .agent-card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .agent-hdr { padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .agent-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .agent-body { padding: 4px 16px 16px; border-top: 1px solid #2d3748; }
+    .agent-running { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .chat-wrap { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 8px; display: flex; flex-direction: column; height: 420px; }
+    .chat-msgs { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .chat-msg { max-width: 78%; padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; }
+    .chat-msg.user { background: #2b4c7e; align-self: flex-end; border-radius: 12px 12px 3px 12px; }
+    .chat-msg.ai { background: #1e2536; align-self: flex-start; border-radius: 12px 12px 12px 3px; }
+    .chat-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #2d3748; }
+    .chat-input input { flex: 1; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .b-green { background: #1c4532; color: #68d391; }
+    .b-red { background: #4a1c1c; color: #fc8181; }
+    .b-blue { background: #1a3a5c; color: #63b3ed; }
+    .b-yellow { background: #4a3b1c; color: #f6ad55; }
+    .b-gray { background: #2d3748; color: #a0aec0; }
+    .b-purple { background: #322a5c; color: #b794f4; }
+    .green { color: #68d391; } .red { color: #fc8181; } .blue { color: #63b3ed; }
+    .yellow { color: #f6ad55; } .gray { color: #718096; } .bold { font-weight: 600; }
+    .tr { text-align: right; } .tc { text-align: center; }
+    .mb-2 { margin-bottom: 8px; } .mb-4 { margin-bottom: 16px; } .mb-6 { margin-bottom: 24px; }
+    .mt-2 { margin-top: 8px; } .mt-4 { margin-top: 16px; }
+    .flex { display: flex; } .flex-1 { flex: 1; } .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; } .gap-2 { gap: 8px; } .gap-4 { gap: 16px; }
+    .progress-track { height: 7px; background: #2d3748; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+    .section-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #e2e8f0; }
+    .spinner { width: 18px; height: 18px; border: 2px solid #2d3748; border-top-color: #63b3ed; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .divider { border: none; border-top: 1px solid #2d3748; margin: 16px 0; }
+    .chip { display: inline-block; padding: 4px 10px; background: #2d3748; border-radius: 14px; font-size: 12px; cursor: pointer; margin: 3px; transition: background 0.15s; }
+    .chip:hover { background: #3182ce; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 3px; }
+    @media (max-width: 768px) { .g3,.g4 { grid-template-columns: repeat(2,1fr); } .content { padding: 12px; } }
+    @media (max-width: 480px) { .g2,.g3,.g4 { grid-template-columns: 1fr; } }
+    .auth-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0f1117; padding:24px; }
+    .auth-box { background:#1a1f2e; border:1px solid #2d3748; border-radius:12px; padding:36px; width:100%; max-width:400px; }
+    .auth-logo { font-size:24px; font-weight:700; color:#63b3ed; margin-bottom:8px; }
+    .auth-sub { font-size:13px; color:#718096; margin-bottom:20px; line-height:1.6; }
+    .auth-tabs { display:flex; margin-bottom:20px; border:1px solid #2d3748; border-radius:8px; overflow:hidden; }
+    .auth-tab { flex:1; padding:9px; text-align:center; font-size:13px; cursor:pointer; color:#718096; transition:all 0.15s; }
+    .auth-tab.active { background:#3182ce; color:#fff; }
+    .auth-error { background:#4a1c1c; color:#fc8181; border:1px solid #9b2c2c; border-radius:6px; padding:9px 12px; font-size:12px; margin-bottom:12px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react,env">
+// =============================================================================
+// FINPAL — Personal Financial Advisor
+// Full-stack version: React frontend + Node/Express/SQLite backend
+// =============================================================================
+const { useState, useEffect, useCallback, useMemo, useRef, useReducer } = React;
+
+if (typeof Recharts === 'undefined') {
+  document.getElementById('root').innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#fc8181;background:#0f1117;flex-direction:column;gap:16px">' +
+    '<div style="font-size:24px">⚠ Charts library failed to load</div>' +
+    '<div style="color:#a0aec0;font-size:13px">Check your internet connection and reload.</div></div>';
+  throw new Error('Recharts not loaded');
+}
+
+const { ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+        LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const MODEL      = 'claude-sonnet-4-6';
+const PIE_COLORS = ['#3182ce','#68d391','#f6ad55','#fc8181','#b794f4','#4fd1c5','#f687b3','#a0aec0'];
+const TABS       = ['Net Worth','Portfolio','Debt','Goals','Models','Market','AI Agents'];
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const fmt = n => {
+  if (n == null || isNaN(n)) return '—';
+  const a = Math.abs(n), s = n < 0 ? '-' : '';
+  if (a >= 1e9) return `${s}$${(a/1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${s}$${(a/1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `${s}$${(a/1e3).toFixed(1)}K`;
+  return `${s}$${a.toFixed(0)}`;
+};
+const fmtFull = n => n == null || isNaN(n) ? '—' :
+  new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);
+const fmtPct  = (n, showSign=true) => n == null || isNaN(n) ? '—' :
+  `${showSign && n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—';
+const monthsBetween = (a, b) => {
+  const d1 = new Date(a), d2 = new Date(b);
+  return Math.max(0, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth()));
+};
+
+// ─── Backend API helpers ─────────────────────────────────────────────────────
+// Simple fetch wrappers — all calls go to the same Express server that serves this page.
+
+async function apiGet(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`GET ${path} → ${r.status}`);
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  if (!r.ok) { const e = await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
+async function apiPut(path, body) {
+  const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  if (!r.ok) { const e = await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
+async function apiDelete(path) {
+  const r = await fetch(path, { method:'DELETE' });
+  if (!r.ok) throw new Error(`DELETE ${path} → ${r.status}`);
+  return r.json();
+}
+
+// ─── External API helpers (browser → 3rd party, bypasses backend) ────────────
+
+/** Anthropic Claude API */
+async function callAPI(messages, systemPrompt, apiKey, maxTokens=1400) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'x-api-key':apiKey,
+              'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:MODEL, max_tokens:maxTokens, system:systemPrompt, messages }),
+  });
+  if (!r.ok) { const t=await r.text(); throw new Error(`${r.status}: ${t}`); }
+  return (await r.json()).content[0].text;
+}
+
+/** Alpha Vantage via server proxy (handles rate limiting + caching) */
+async function fetchStockPrice(ticker) {
+  const d = await apiGet(`/api/proxy/av/${encodeURIComponent(ticker)}`);
+  if (d.error) throw new Error(d.error);
+  return { price: d.price, changePct: d.changePct };
+}
+
+/** CoinGecko via server proxy (handles caching) */
+async function fetchCryptoPrice(coinId) {
+  const d = await apiGet(`/api/proxy/coingecko/${encodeURIComponent(coinId)}`);
+  if (d.error) throw new Error(d.error);
+  return { price: d.price, changePct: d.changePct };
+}
+
+/** FRED via server proxy (avoids CORS block) */
+async function fetchFRED(seriesId) {
+  const d = await apiGet(`/api/proxy/fred?series_id=${encodeURIComponent(seriesId)}&limit=24&sort_order=desc`);
+  if (!d.observations) throw new Error(`FRED error for ${seriesId}`);
+  return d.observations.map(o=>({date:o.date,value:parseFloat(o.value)})).filter(o=>!isNaN(o.value));
+}
+
+/** Finnhub company news via server proxy (hides API key + 6h cache) */
+async function fetchFinnhubNews(ticker) {
+  const d = await apiGet(`/api/proxy/finnhub/news/${encodeURIComponent(ticker)}`);
+  if (d.error) throw new Error(d.error);
+  return Array.isArray(d) ? d : [];
+}
+
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+function RenderedText({ text }) {
+  if (!text) return null;
+  return (
+    <div style={{lineHeight:1.75,fontSize:13,color:'#e2e8f0'}}>
+      {text.split('\n').map((line,i) => {
+        if (line.startsWith('## ')) return <h4 key={i} style={{color:'#63b3ed',fontWeight:600,margin:'10px 0 4px'}}>{line.slice(3)}</h4>;
+        if (line.startsWith('# '))  return <h3 key={i} style={{color:'#e2e8f0',fontWeight:700,margin:'12px 0 6px'}}>{line.slice(2)}</h3>;
+        if (line.startsWith('- ') || line.startsWith('* '))
+          return <div key={i} style={{display:'flex',gap:8,margin:'2px 0'}}><span style={{color:'#63b3ed',flexShrink:0}}>•</span><span>{line.slice(2)}</span></div>;
+        if (line.trim()==='') return <div key={i} style={{height:6}}/>;
+        const parts = line.split(/\*\*(.*?)\*\*/);
+        return <p key={i} style={{margin:'2px 0'}}>{parts.map((p,j) => j%2===1?<strong key={j}>{p}</strong>:p)}</p>;
+      })}
+    </div>
+  );
+}
+
+// ─── Financial models ─────────────────────────────────────────────────────────
+
+function runMonteCarlo({ currentAge, retirementAge, currentSavings, monthlyContribution,
+                         annualReturnMean=0.07, annualReturnStd=0.15, runs=1000 }) {
+  const years = Math.max(1, retirementAge - currentAge);
+  const results = new Array(runs);
+  for (let r=0; r<runs; r++) {
+    let bal = currentSavings;
+    for (let y=0; y<years; y++) {
+      const u1 = Math.random()||1e-10, u2 = Math.random();
+      const z = Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
+      bal = bal*(1+annualReturnMean+annualReturnStd*z) + monthlyContribution*12;
+      if (bal<0) bal=0;
+    }
+    results[r] = bal;
+  }
+  results.sort((a,b)=>a-b);
+  const p = pct => results[Math.min(runs-1, Math.floor(pct/100*runs))];
+  let bal = currentSavings;
+  const chartData = Array.from({length:years+1},(_,y)=>{
+    if (y>0) bal = bal*(1+annualReturnMean)+monthlyContribution*12;
+    return { year:currentAge+y, median:Math.round(bal) };
+  });
+  return { p10:p(10), p25:p(25), p50:p(50), p75:p(75), p90:p(90), chartData, annualIncome4pct:p(50)*0.04 };
+}
+
+// ─── Tax bracket lookup (2024 IRS rates) ─────────────────────────────────────
+const TAX_BRACKETS = {
+  single:             [[0,10],[11600,12],[47150,22],[100525,24],[191950,32],[243725,35],[609350,37]],
+  married_jointly:    [[0,10],[23200,12],[94300,22],[201050,24],[383900,32],[487450,35],[731200,37]],
+  married_separately: [[0,10],[11600,12],[47150,22],[100525,24],[191950,32],[243725,35],[365600,37]],
+  head_of_household:  [[0,10],[16550,12],[63100,22],[100500,24],[191950,32],[243700,35],[609350,37]],
+};
+
+function calcMarginalRate(income, filingStatus) {
+  const brackets = TAX_BRACKETS[filingStatus] || TAX_BRACKETS.single;
+  let rate = 10;
+  for (const [threshold, r] of brackets) {
+    if ((income || 0) >= threshold) rate = r; else break;
+  }
+  return rate;
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const BLANK = {
+  setupComplete: false, activeTab:'Net Worth',
+  profile: { name:'', age:30, annualIncome:100000, filingStatus:'single', marginalTaxRateOverride:null, riskTolerance:3, primaryGoal:'retirement' },
+  assets:[], liabilities:[], cash:[], goals:[], snapshots:[],
+  apiKeys: { anthropic:'', alphaVantage:'', finnhub:'', fred:'' },
+  livePrices:{}, pricesFetching:false, pricesFetched:false,
+  news:{}, macro:{}, newsFetchedAt:null, macroFetchedAt:null,
+  agentResults:{}, agentStatus:{}, agentChat:[],
+};
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'HYDRATE': {
+      const p = action.payload;
+      const now = Date.now();
+      const PRICES_TTL = 8 * 60 * 60 * 1000;  // 8 hours
+      const NEWS_TTL   = 6 * 60 * 60 * 1000;  // 6 hours
+      const MACRO_TTL  = 6 * 60 * 60 * 1000;  // 6 hours
+      const isFresh = (fetchedAt, ttl) =>
+        fetchedAt && (now - new Date(fetchedAt).getTime()) < ttl;
+      const pricesFresh = isFresh(p.marketCache?.prices?.fetchedAt, PRICES_TTL);
+      const newsFresh   = isFresh(p.marketCache?.news?.fetchedAt,   NEWS_TTL);
+      const macroFresh  = isFresh(p.marketCache?.macro?.fetchedAt,  MACRO_TTL);
+      const cachedPrices = pricesFresh ? (p.marketCache.prices.data || {}) : {};
+      return { ...BLANK,
+        profile:   { ...BLANK.profile, ...p.profile },
+        assets:    p.assets    || [],
+        liabilities: p.liabilities || [],
+        cash:      p.cash      || [],
+        goals:     p.goals     || [],
+        apiKeys:   p.apiKeys   || BLANK.apiKeys,
+        snapshots: p.snapshots || [],
+        setupComplete: p.profile?.setupComplete || false,
+        activeTab: 'Net Worth',
+        livePrices:    cachedPrices,
+        pricesFetching: false,
+        pricesFetched: pricesFresh && Object.keys(cachedPrices).length > 0,
+        news:          newsFresh  ? (p.marketCache.news.data  || {}) : {},
+        macro:         macroFresh ? (p.marketCache.macro.data || {}) : {},
+        newsFetchedAt: newsFresh  ? p.marketCache.news.fetchedAt   : null,
+        macroFetchedAt:macroFresh ? p.marketCache.macro.fetchedAt  : null,
+        agentResults: p.agentCache?.results || {},
+        agentChat:    p.agentCache?.chat    || [],
+      };
+    }
+    case 'SET_TAB':           return {...state, activeTab:action.tab};
+    case 'SET_PRICES':        return {...state, livePrices:action.prices, pricesFetching:false, pricesFetched:true};
+    case 'SET_NEWS':  return {...state, news:action.data, newsFetchedAt:action.fetchedAt};
+    case 'SET_MACRO': return {...state, macro:action.data, macroFetchedAt:action.fetchedAt};
+    case 'PRICES_FETCHING':   return {...state, pricesFetching:true};
+    case 'SET_SETUP_COMPLETE':return {...state, setupComplete:true, profile:{...state.profile,...action.profile}};
+    case 'ADD_ASSET':         return {...state, assets:[...state.assets, action.item]};
+    case 'REMOVE_ASSET':      return {...state, assets:state.assets.filter(a=>a.id!==action.id)};
+    case 'UPDATE_ASSET':      return {...state, assets:state.assets.map(a=>a.id===action.id?{...a,...action.data}:a)};
+    // Lot actions — action.asset is the full updated asset (with lots) returned by the server
+    case 'ADD_LOT':
+    case 'REMOVE_LOT':
+    case 'UPDATE_LOT':
+      return {...state, assets:state.assets.map(a=>a.id===action.assetId ? {...a,...action.asset} : a)};
+    case 'ADD_LIABILITY':     return {...state, liabilities:[...state.liabilities, action.item]};
+    case 'REMOVE_LIABILITY':  return {...state, liabilities:state.liabilities.filter(l=>l.id!==action.id)};
+    case 'UPDATE_LIABILITY':  return {...state, liabilities:state.liabilities.map(l=>l.id===action.id?{...l,...action.data}:l)};
+    case 'ADD_CASH':          return {...state, cash:[...state.cash, action.item]};
+    case 'REMOVE_CASH':       return {...state, cash:state.cash.filter(c=>c.id!==action.id)};
+    case 'ADD_GOAL':          return {...state, goals:[...state.goals, action.item]};
+    case 'REMOVE_GOAL':       return {...state, goals:state.goals.filter(g=>g.id!==action.id)};
+    case 'UPDATE_GOAL':       return {...state, goals:state.goals.map(g=>g.id===action.id?{...g,...action.data}:g)};
+    case 'SET_KEYS':          return {...state, apiKeys:{...state.apiKeys,...action.keys}};
+    case 'SET_AGENT_RESULT':  return {...state, agentResults:{...state.agentResults,[action.id]:action.result}};
+    case 'SET_AGENT_STATUS':  return {...state, agentStatus:{...state.agentStatus,[action.id]:action.status}};
+    case 'CLEAR_AGENTS':      return {...state, agentResults:{}, agentStatus:{}};
+    case 'SET_AGENT_CHAT':    return {...state, agentChat:action.chat};
+    default: return state;
+  }
+}
+
+// =============================================================================
+// LOGIN / REGISTER SCREEN
+// =============================================================================
+function LoginScreen({ onLogin }) {
+  const [mode, setMode]     = useState('login'); // 'login' | 'register'
+  const [username, setUser] = useState('');
+  const [password, setPass] = useState('');
+  const [error, setError]   = useState('');
+  const [loading, setLoad]  = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || !password) return setError('Fill in all fields');
+    setLoad(true); setError('');
+    try {
+      const data = await apiPost(`/api/auth/${mode}`, { username: username.trim(), password });
+      onLogin(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally { setLoad(false); }
+  };
+
+  return (
+    <div className="auth-wrap">
+      <div className="auth-box">
+        <div className="auth-logo">💰 FinPal</div>
+        <div className="auth-sub">
+          Your personal financial advisor.<br />
+          No bank sync. No data sold. Just analysis.
+        </div>
+        <div className="auth-tabs">
+          <div className={`auth-tab ${mode==='login'?'active':''}`} onClick={()=>{setMode('login');setError('');}}>Log In</div>
+          <div className={`auth-tab ${mode==='register'?'active':''}`} onClick={()=>{setMode('register');setError('');}}>Create Account</div>
+        </div>
+        {error && <div className="auth-error">{error}</div>}
+        <form onSubmit={submit}>
+          <div className="form-group">
+            <label>Username</label>
+            <input value={username} onChange={e=>setUser(e.target.value)} placeholder="your username" autoFocus autoComplete="username" />
+          </div>
+          <div className="form-group">
+            <label>Password</label>
+            <input type="password" value={password} onChange={e=>setPass(e.target.value)} placeholder="••••••••" autoComplete={mode==='login'?'current-password':'new-password'} />
+          </div>
+          <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading} style={{width:'100%'}}>
+            {loading ? 'Please wait…' : mode==='login' ? 'Log In' : 'Create Account'}
+          </button>
+        </form>
+        {mode==='register' && (
+          <p style={{fontSize:11,color:'#4a5568',marginTop:12,lineHeight:1.6}}>
+            Your data is stored locally on this server. API keys (Anthropic, Alpha Vantage, etc.) are saved per account and only ever sent directly to their respective services from your browser.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// SETUP WIZARD (5 steps — API keys now in Settings, not wizard)
+// =============================================================================
+function SetupWizard({ onComplete }) {
+  const STEPS = ['Profile','Assets','Liabilities','Cash','Goals'];
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const [profile, setProfile] = useState({ name:'', age:30, annualIncome:100000, filingStatus:'single', marginalTaxRateOverride:null, riskTolerance:3, primaryGoal:'retirement' });
+  const [assets, setAssets] = useState([]);
+  const [liabilities, setLiabilities] = useState([]);
+  const [cash, setCash] = useState([]);
+  const [goals, setGoals] = useState([]);
+
+  // Temp form state for each item type
+  const [na, setNa] = useState({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
+  const [nl, setNl] = useState({ name:'', type:'mortgage', balance:0, apr:5, minPayment:0 });
+  const [nc, setNc] = useState({ name:'', amount:0, apy:0 });
+  const [ng, setNg] = useState({ name:'', targetAmount:0, targetDate:'', currentSaved:0, priority:'medium' });
+
+  const pf = (k,v) => setProfile(p=>({...p,[k]:v}));
+
+  // ── Finish: save everything to the backend ───────────────────────────────
+  const finish = async () => {
+    setSaving(true); setError('');
+    try {
+      // 1. Save profile and mark setup complete
+      await apiPut('/api/profile', { ...profile, setupComplete:true });
+
+      // 2. Bulk insert assets/liabilities/cash/goals in parallel batches
+      const [savedAssets, savedLiabilities, savedCash, savedGoals] = await Promise.all([
+        Promise.all(assets.map(a => apiPost('/api/assets', a))),
+        Promise.all(liabilities.map(l => apiPost('/api/liabilities', l))),
+        Promise.all(cash.map(c => apiPost('/api/cash', c))),
+        Promise.all(goals.map(g => apiPost('/api/goals', g))),
+      ]);
+
+      onComplete({ profile:{ ...profile, setupComplete:true },
+                   assets:savedAssets, liabilities:savedLiabilities,
+                   cash:savedCash, goals:savedGoals, snapshots:[] });
+    } catch (e) {
+      setError(e.message);
+      setSaving(false);
+    }
+  };
+
+  const addItem = (list, setList, item, reset) => { setList(l=>[...l,{...item, _id:Date.now()}]); reset(); };
+
+  const renderProfile = () => (
+    <div>
+      <div className="grid g2 gap-4 mb-4">
+        <div className="form-group"><label>Your Name</label>
+          <input value={profile.name} onChange={e=>pf('name',e.target.value)} placeholder="Alex Smith" /></div>
+        <div className="form-group"><label>Age</label>
+          <input type="number" min="18" max="90" value={profile.age} onChange={e=>pf('age',+e.target.value)} /></div>
+        <div className="form-group"><label>Annual Income (pre-tax)</label>
+          <input type="number" value={profile.annualIncome} onChange={e=>pf('annualIncome',+e.target.value)} /></div>
+        <div className="form-group"><label>Filing Status</label>
+          <select value={profile.filingStatus||'single'} onChange={e=>pf('filingStatus',e.target.value)}>
+            <option value="single">Single</option>
+            <option value="married_jointly">Married Filing Jointly</option>
+            <option value="married_separately">Married Filing Separately</option>
+            <option value="head_of_household">Head of Household</option>
+          </select></div>
+      </div>
+      {(() => {
+        const rate = profile.marginalTaxRateOverride != null
+          ? profile.marginalTaxRateOverride
+          : calcMarginalRate(profile.annualIncome, profile.filingStatus);
+        return (
+          <div style={{background:'#0f1117',border:'1px solid #2d3748',borderRadius:6,padding:'8px 12px',marginBottom:16,fontSize:12}}>
+            <span style={{color:'#a0aec0'}}>Federal marginal rate: </span>
+            <span className="bold blue">{rate}%</span>
+            <span style={{color:'#718096'}}> (2024 IRS brackets)</span>
+            {' · '}
+            <label style={{cursor:'pointer',color:'#63b3ed'}}>
+              <input type="checkbox" style={{marginRight:4}} checked={profile.marginalTaxRateOverride!=null}
+                onChange={e=>pf('marginalTaxRateOverride',e.target.checked?rate:null)} />
+              Override
+            </label>
+            {profile.marginalTaxRateOverride!=null && (
+              <input type="number" min="0" max="60" step="1" value={profile.marginalTaxRateOverride}
+                onChange={e=>pf('marginalTaxRateOverride',+e.target.value)}
+                style={{width:55,marginLeft:8}} />
+            )}
+          </div>
+        );
+      })()}
+      <div className="form-group">
+        <label>Risk Tolerance: <span className="blue">{['','Very Conservative','Conservative','Moderate','Aggressive','Very Aggressive'][profile.riskTolerance]}</span></label>
+        <input type="range" min="1" max="5" value={profile.riskTolerance} onChange={e=>pf('riskTolerance',+e.target.value)} style={{width:'100%',accentColor:'#3182ce'}} />
+      </div>
+      <div className="form-group"><label>Primary Goal</label>
+        <select value={profile.primaryGoal} onChange={e=>pf('primaryGoal',e.target.value)}>
+          <option value="retirement">Retirement</option><option value="house">Buy a House</option>
+          <option value="fi">Financial Independence</option><option value="debt">Pay Off Debt</option>
+          <option value="education">Education</option><option value="wealth">Build Wealth</option>
+        </select></div>
+    </div>
+  );
+
+  const [showWizardAdd, setShowWizardAdd] = useState(false);
+  const [wizardAddErr, setWizardAddErr] = useState('');
+  const addWizardAsset = () => {
+    if (!na.ticker.trim()) return setWizardAddErr('Ticker required');
+    setWizardAddErr('');
+    setAssets(l=>[...l, {...na, ticker:na.ticker.toUpperCase(), shares:+na.shares, costBasis:+na.costBasis, _id:Date.now()}]);
+    setNa({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
+    setShowWizardAdd(false);
+  };
+  const renderAssets = () => (
+    <div>
+      {showWizardAdd ? (
+        <AddAssetPanel newAsset={na} setNewAsset={setNa} addAsset={addWizardAsset} addErr={wizardAddErr} compact />
+      ) : (
+        <button className="btn btn-primary btn-sm mb-4" onClick={()=>setShowWizardAdd(true)}>+ Add Asset</button>
+      )}
+      {assets.length>0 && <table><thead><tr><th>Ticker</th><th>Shares</th><th>Cost</th><th>Account</th><th></th></tr></thead>
+        <tbody>{assets.map((a,i)=><tr key={i}><td className="bold">{a.ticker}</td><td>{a.shares}</td><td>{fmtFull(a.costBasis*a.shares)}</td><td><span className="badge b-blue">{a.accountType}</span></td><td><button className="btn btn-danger btn-sm" onClick={()=>setAssets(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
+    </div>
+  );
+
+  const renderLiabilities = () => (
+    <div>
+      <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
+        <div className="form-group" style={{marginBottom:0}}><label>Name</label>
+          <input value={nl.name} onChange={e=>setNl(l=>({...l,name:e.target.value}))} placeholder="Chase Mortgage" /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Type</label>
+          <select value={nl.type} onChange={e=>setNl(l=>({...l,type:e.target.value}))}>
+            <option value="mortgage">Mortgage</option><option value="auto">Auto</option>
+            <option value="student">Student Loan</option><option value="credit_card">Credit Card</option><option value="other">Other</option></select></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Balance ($)</label>
+          <input type="number" min="0" value={nl.balance} onChange={e=>setNl(l=>({...l,balance:e.target.value}))} /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>APR (%)</label>
+          <input type="number" min="0" step="0.1" value={nl.apr} onChange={e=>setNl(l=>({...l,apr:e.target.value}))} /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Min Payment ($)</label>
+          <input type="number" min="0" value={nl.minPayment} onChange={e=>setNl(l=>({...l,minPayment:e.target.value}))} /></div>
+      </div>
+      <button className="btn btn-primary btn-sm mb-4" onClick={()=>{ if(!nl.name) return; setLiabilities(l=>[...l,{...nl,balance:+nl.balance,apr:+nl.apr,minPayment:+nl.minPayment}]); setNl({name:'',type:'mortgage',balance:0,apr:5,minPayment:0}); }}>+ Add Debt</button>
+      {liabilities.length>0 && <table><thead><tr><th>Name</th><th>Balance</th><th>APR</th><th></th></tr></thead>
+        <tbody>{liabilities.map((l,i)=><tr key={i}><td className="bold">{l.name}</td><td className="red">{fmtFull(l.balance)}</td><td>{l.apr}%</td><td><button className="btn btn-danger btn-sm" onClick={()=>setLiabilities(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
+    </div>
+  );
+
+  const renderCash = () => (
+    <div>
+      <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
+        <div className="form-group" style={{marginBottom:0}}><label>Account Name</label>
+          <input value={nc.name} onChange={e=>setNc(c=>({...c,name:e.target.value}))} placeholder="Marcus HYSA" /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Balance ($)</label>
+          <input type="number" min="0" value={nc.amount} onChange={e=>setNc(c=>({...c,amount:e.target.value}))} /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>APY (%)</label>
+          <input type="number" min="0" step="0.01" value={nc.apy} onChange={e=>setNc(c=>({...c,apy:e.target.value}))} /></div>
+      </div>
+      <button className="btn btn-primary btn-sm mb-4" onClick={()=>{ if(!nc.name) return; setCash(c=>[...c,{...nc,amount:+nc.amount,apy:+nc.apy}]); setNc({name:'',amount:0,apy:0}); }}>+ Add Account</button>
+      {cash.length>0 && <table><thead><tr><th>Account</th><th>Balance</th><th>APY</th><th></th></tr></thead>
+        <tbody>{cash.map((c,i)=><tr key={i}><td className="bold">{c.name}</td><td>{fmtFull(c.amount)}</td><td>{c.apy}%</td><td><button className="btn btn-danger btn-sm" onClick={()=>setCash(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
+    </div>
+  );
+
+  const renderGoals = () => (
+    <div>
+      <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
+        <div className="form-group" style={{marginBottom:0}}><label>Goal Name</label>
+          <input value={ng.name} onChange={e=>setNg(g=>({...g,name:e.target.value}))} placeholder="Down payment…" /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Target Amount ($)</label>
+          <input type="number" min="0" value={ng.targetAmount} onChange={e=>setNg(g=>({...g,targetAmount:e.target.value}))} /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Target Date</label>
+          <input type="date" value={ng.targetDate} onChange={e=>setNg(g=>({...g,targetDate:e.target.value}))} /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Already Saved ($)</label>
+          <input type="number" min="0" value={ng.currentSaved} onChange={e=>setNg(g=>({...g,currentSaved:e.target.value}))} /></div>
+        <div className="form-group" style={{marginBottom:0}}><label>Priority</label>
+          <select value={ng.priority} onChange={e=>setNg(g=>({...g,priority:e.target.value}))}>
+            <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
+      </div>
+      <button className="btn btn-primary btn-sm mb-4" onClick={()=>{ if(!ng.name||!ng.targetDate) return; setGoals(g=>[...g,{...ng,targetAmount:+ng.targetAmount,currentSaved:+ng.currentSaved}]); setNg({name:'',targetAmount:0,targetDate:'',currentSaved:0,priority:'medium'}); }}>+ Add Goal</button>
+      {goals.length>0 && <table><thead><tr><th>Goal</th><th>Target</th><th>Date</th><th></th></tr></thead>
+        <tbody>{goals.map((g,i)=><tr key={i}><td className="bold">{g.name}</td><td>{fmtFull(g.targetAmount)}</td><td>{fmtDate(g.targetDate)}</td><td><button className="btn btn-danger btn-sm" onClick={()=>setGoals(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
+    </div>
+  );
+
+  const steps = [renderProfile, renderAssets, renderLiabilities, renderCash, renderGoals];
+  const canNext = () => step===0 ? profile.name.trim().length>0 : true;
+
+  return (
+    <div className="wizard-wrap">
+      <div className="wizard-box">
+        <div className="wizard-title">Welcome to FinPal</div>
+        <div className="wizard-sub">Set up your financial profile. You can add more data any time from the app.</div>
+        <div className="progress-dots">
+          {STEPS.map((s,i)=><div key={s} className={`dot ${i<step?'done':i===step?'active':''}`} title={s} />)}
+        </div>
+        <div className="section-title" style={{marginBottom:20}}>{STEPS[step]}</div>
+        {error && <div className="auth-error mb-4">{error}</div>}
+        {steps[step]()}
+        <div className="flex justify-between mt-4" style={{marginTop:24}}>
+          <button className="btn btn-secondary" onClick={()=>setStep(s=>Math.max(0,s-1))} disabled={step===0||saving}>Back</button>
+          {step<STEPS.length-1
+            ? <button className="btn btn-primary" onClick={()=>setStep(s=>s+1)} disabled={!canNext()}>Next →</button>
+            : <button className="btn btn-success btn-lg" onClick={finish} disabled={saving}>
+                {saving?'Saving…':'Launch FinPal →'}
+              </button>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// NET WORTH TAB (uses real snapshot history)
+// =============================================================================
+function NetWorthTab({ state, dispatch }) {
+  const { assets, liabilities, cash, livePrices, profile, snapshots } = state;
+  const [showAddCash, setShowAddCash] = useState(false);
+  const [newCash, setNewCash] = useState({ name:'', amount:0, apy:0 });
+  const [cashErr, setCashErr] = useState('');
+
+  const assetValue = assets.reduce((s,a) => s + (livePrices[a.ticker]?.price || a.costBasis) * a.shares, 0);
+  const cashValue  = cash.reduce((s,c) => s + c.amount, 0);
+  const debtValue  = liabilities.reduce((s,l) => s + l.balance, 0);
+  const netWorth   = assetValue + cashValue - debtValue;
+  const costBasisTotal = assets.reduce((s,a) => s + a.costBasis * a.shares, 0);
+  const unrealizedGain = assetValue - costBasisTotal;
+
+  const typeMap = {};
+  assets.forEach(a => {
+    const val = (livePrices[a.ticker]?.price || a.costBasis) * a.shares;
+    typeMap[a.assetType] = (typeMap[a.assetType] || 0) + val;
+  });
+  if (cashValue > 0) typeMap['cash'] = cashValue;
+  const pieData = Object.entries(typeMap).map(([name,value]) => ({
+    name: name.charAt(0).toUpperCase()+name.slice(1), value: Math.round(value)
+  }));
+
+  const acctMap = {};
+  assets.forEach(a => {
+    const val = (livePrices[a.ticker]?.price || a.costBasis) * a.shares;
+    acctMap[a.accountType] = (acctMap[a.accountType] || 0) + val;
+  });
+  const acctData = Object.entries(acctMap).map(([name,value]) => ({name, value: Math.round(value)}));
+
+  const historyData = useMemo(() => {
+    const pts = (snapshots||[]).map(s => ({
+      month: s.snapshotMonth || s.snapshot_month || '',
+      netWorth: s.netWorth ?? s.net_worth ?? 0,
+    }));
+    const nowMonth = new Date().toISOString().slice(0,7);
+    if (!pts.length || pts[pts.length-1].month !== nowMonth)
+      pts.push({ month: nowMonth, netWorth: Math.round(netWorth) });
+    return pts;
+  }, [snapshots, netWorth]);
+
+  const projData = useMemo(() => {
+    const ms = profile.annualIncome * 0.20 / 12;
+    return Array.from({length:11},(_,i) => ({
+      year: new Date().getFullYear()+i,
+      projected: Math.round(netWorth + ms*12*i * Math.pow(1.07, i)),
+    }));
+  }, [netWorth, profile.annualIncome]);
+
+  const addCash = async () => {
+    if (!newCash.name.trim()) return setCashErr('Account name required');
+    setCashErr('');
+    try {
+      const saved = await apiPost('/api/cash', {...newCash, amount:+newCash.amount, apy:+newCash.apy});
+      dispatch({ type:'ADD_CASH', item:saved });
+      setNewCash({ name:'', amount:0, apy:0 });
+      setShowAddCash(false);
+    } catch(e) { setCashErr(e.message); }
+  };
+
+  const removeCash = async (id) => {
+    try { await apiDelete(`/api/cash/${id}`); dispatch({ type:'REMOVE_CASH', id }); } catch(e) {}
+  };
+
+  const statCard = (label, value, sub, color='#e2e8f0') => (
+    <div className="card card-sm">
+      <div className="card-title">{label}</div>
+      <div className="card-value" style={{color}}>{value}</div>
+      {sub && <div style={{fontSize:12,color:'#718096',marginTop:4}}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="grid g4 gap-4 mb-6">
+        {statCard('Net Worth', fmtFull(netWorth), `${fmtFull(assetValue+cashValue)} assets — ${fmtFull(debtValue)} debt`, netWorth>=0?'#68d391':'#fc8181')}
+        {statCard('Investment Portfolio', fmtFull(assetValue), `Cost basis ${fmtFull(costBasisTotal)}`)}
+        {statCard('Unrealized P&L', fmtFull(unrealizedGain), costBasisTotal>0?`${(unrealizedGain/costBasisTotal*100).toFixed(1)}% total return`:null, unrealizedGain>=0?'#68d391':'#fc8181')}
+        {statCard('Cash & Savings', fmtFull(cashValue), cash.map(c=>c.name).join(', ')||'—')}
+      </div>
+
+      <div className="grid g2 gap-4 mb-6">
+        <div className="card">
+          <div className="section-title">Asset Allocation</div>
+          {pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
+                  {pieData.map((_,i) => <Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+                <Legend iconSize={10} wrapperStyle={{fontSize:12}} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <div className="gray tc" style={{padding:'40px 0',fontSize:13}}>No assets added yet</div>}
+        </div>
+        <div className="card">
+          <div className="section-title">By Account Type</div>
+          {acctData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={acctData} layout="vertical" margin={{left:10,right:20}}>
+                <XAxis type="number" tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{fill:'#a0aec0',fontSize:12}} axisLine={false} tickLine={false} width={70} />
+                <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+                <Bar dataKey="value" fill="#3182ce" radius={[0,4,4,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div className="gray tc" style={{padding:'40px 0',fontSize:13}}>No data</div>}
+        </div>
+      </div>
+
+      {historyData.length > 1 && (
+        <div className="card mb-6">
+          <div className="section-title">Net Worth History <span style={{fontSize:12,fontWeight:400,color:'#718096'}}>(recorded monthly on login)</span></div>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={historyData} margin={{top:10,right:20,bottom:0,left:10}}>
+              <defs>
+                <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#68d391" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#68d391" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+              <XAxis dataKey="month" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+              <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+              <Area type="monotone" dataKey="netWorth" stroke="#68d391" fill="url(#histGrad)" strokeWidth={2} dot={{fill:'#68d391',r:3}} name="Net Worth" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className="card mb-6">
+        <div className="section-title">10-Year Net Worth Projection <span style={{fontSize:12,fontWeight:400,color:'#718096'}}>(20% savings rate, 7% annualized)</span></div>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={projData} margin={{top:10,right:20,bottom:0,left:10}}>
+            <defs>
+              <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3182ce" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#3182ce" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+            <XAxis dataKey="year" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+            <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+            <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+            <Area type="monotone" dataKey="projected" stroke="#3182ce" fill="url(#nwGrad)" strokeWidth={2} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>Cash Accounts</div>
+          <button className="btn btn-primary btn-sm" onClick={()=>setShowAddCash(v=>!v)}>
+            {showAddCash?'Cancel':'+ Add Account'}
+          </button>
+        </div>
+        {showAddCash && (
+          <div className="grid g3 gap-4 mb-4" style={{alignItems:'end'}}>
+            <div className="form-group" style={{marginBottom:0}}><label>Account Name</label>
+              <input value={newCash.name} onChange={e=>setNewCash(c=>({...c,name:e.target.value}))} placeholder="Marcus HYSA" /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Balance ($)</label>
+              <input type="number" min="0" value={newCash.amount} onChange={e=>setNewCash(c=>({...c,amount:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>APY (%)</label>
+              <input type="number" min="0" step="0.01" value={newCash.apy} onChange={e=>setNewCash(c=>({...c,apy:e.target.value}))} /></div>
+            {cashErr && <div style={{fontSize:12,color:'#fc8181',gridColumn:'1/-1'}}>{cashErr}</div>}
+            <button className="btn btn-success btn-sm" onClick={addCash}>Save Account</button>
+          </div>
+        )}
+        {cash.length === 0 && !showAddCash && (
+          <div className="gray tc" style={{padding:'20px 0',fontSize:13}}>No cash accounts added</div>
+        )}
+        {cash.length > 0 && (
+          <table><thead><tr><th>Account</th><th>Balance</th><th>APY</th><th></th></tr></thead>
+            <tbody>{cash.map(c=>(
+              <tr key={c.id}>
+                <td className="bold">{c.name}</td>
+                <td>{fmtFull(c.amount)}</td>
+                <td>{c.apy}%</td>
+                <td><button className="btn btn-danger btn-sm" onClick={()=>removeCash(c.id)}>×</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// PORTFOLIO TAB
+// =============================================================================
+const CRYPTO_IDS = {
+  BTC:'bitcoin', ETH:'ethereum', SOL:'solana', ADA:'cardano',
+  AVAX:'avalanche-2', DOT:'polkadot', DOGE:'dogecoin', MATIC:'matic-network',
+  LINK:'chainlink', UNI:'uniswap', LTC:'litecoin', XRP:'ripple',
+};
+
+// Shared "Add Asset" panel used by PortfolioTab and SetupWizard
+// Includes manual form + "Describe holdings" AI shortcut
+function AddAssetPanel({ newAsset, setNewAsset, addAsset, addErr, apiKey, onParsed, compact }) {
+  const [showDescribe, setShowDescribe] = useState(false);
+  const [describeText, setDescribeText] = useState('');
+  const [describeErr, setDescribeErr] = useState('');
+  const [descParsing, setDescParsing] = useState(false);
+  const [parsedItems, setParsedItems] = useState([]);
+
+  const parseDescription = async () => {
+    if (!apiKey) return setDescribeErr('Add your Anthropic API key in Settings to use this feature.');
+    if (!describeText.trim()) return setDescribeErr('Enter a description first.');
+    setDescribeErr(''); setDescParsing(true); setParsedItems([]);
+    try {
+      const sysPrompt = 'You are a financial data extractor. Return ONLY a valid JSON array with no explanation.';
+      const prompt = `Extract investment holdings from this text into a JSON array. Each element must have: {ticker, name, shares, costBasis, accountType, assetType}. accountType must be one of: taxable, ira, 401k, roth. assetType must be one of: stock, etf, crypto, other. costBasis is the per-share/per-unit price paid (use 0 if unknown). Text:\n\n${describeText}`;
+      const response = await callAPI([{role:'user',content:prompt}], sysPrompt, apiKey, 800);
+      const json = response.match(/\[[\s\S]*\]/)?.[0];
+      if (!json) throw new Error('No JSON found in response');
+      const items = JSON.parse(json);
+      setParsedItems(items);
+    } catch(e) { setDescribeErr(`Parse error: ${e.message}`); }
+    setDescParsing(false);
+  };
+
+  const applyParsed = (item) => {
+    setNewAsset({ ticker: item.ticker||'', name: item.name||'', shares: item.shares||1,
+                  costBasis: item.costBasis||0, accountType: item.accountType||'taxable',
+                  assetType: item.assetType||'stock', purchaseDate: '' });
+    setShowDescribe(false); setParsedItems([]); setDescribeText('');
+    if (onParsed) onParsed([item]);
+  };
+
+  return (
+    <div className="card mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="section-title" style={{margin:0}}>Add Asset</div>
+        <button className="btn btn-secondary btn-sm" onClick={()=>{setShowDescribe(v=>!v);setDescribeErr('');setParsedItems([]);}}>
+          {showDescribe ? 'Manual entry' : '✦ Describe holdings'}
+        </button>
+      </div>
+
+      {showDescribe ? (
+        <div>
+          <div className="form-group">
+            <label>Describe your holdings in plain English</label>
+            <textarea value={describeText} onChange={e=>setDescribeText(e.target.value)} rows={4}
+              placeholder={'e.g. "100 AAPL at $150 in taxable, 50 MSFT at $320 in my IRA, 2 BTC"'}
+              style={{width:'100%',background:'#0f1117',border:'1px solid #2d3748',color:'#e2e8f0',borderRadius:6,padding:8,fontSize:13,fontFamily:'inherit'}} />
+          </div>
+          {describeErr && <div style={{fontSize:12,color:'#fc8181',marginBottom:8}}>{describeErr}</div>}
+          <button className="btn btn-primary" onClick={parseDescription} disabled={descParsing}>
+            {descParsing ? 'Parsing…' : 'Parse with AI'}
+          </button>
+          {parsedItems.length > 0 && (
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:12,color:'#a0aec0',marginBottom:6}}>Parsed — click to load into form:</div>
+              {parsedItems.map((item, i) => (
+                <div key={i} onClick={()=>applyParsed(item)}
+                  style={{display:'flex',gap:12,alignItems:'center',padding:'6px 10px',cursor:'pointer',
+                    border:'1px solid #2d3748',borderRadius:6,marginBottom:4,background:'#0f1117',
+                    fontSize:12,color:'#e2e8f0'}}>
+                  <span className="bold" style={{width:60}}>{item.ticker}</span>
+                  <span className="gray">{item.shares} shares @ ${item.costBasis}</span>
+                  <span className="badge b-blue">{item.accountType}</span>
+                  <span style={{marginLeft:'auto',color:'#63b3ed'}}>→ Load</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          <div className={compact ? 'grid g3 gap-4 mb-4' : 'grid g2 gap-4 mb-4'} style={{alignItems:'end'}}>
+            <div className="form-group" style={{marginBottom:0}}><label>Ticker</label>
+              <input value={newAsset.ticker} onChange={e=>setNewAsset(a=>({...a,ticker:e.target.value}))} placeholder="AAPL, BTC, VTI…" /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Name (optional)</label>
+              <input value={newAsset.name} onChange={e=>setNewAsset(a=>({...a,name:e.target.value}))} placeholder="Apple Inc." /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Shares</label>
+              <input type="number" min="0" step="any" value={newAsset.shares} onChange={e=>setNewAsset(a=>({...a,shares:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Cost Basis (per share)</label>
+              <input type="number" min="0" step="any" value={newAsset.costBasis} onChange={e=>setNewAsset(a=>({...a,costBasis:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Purchase Date (optional)</label>
+              <input type="date" value={newAsset.purchaseDate||''} onChange={e=>setNewAsset(a=>({...a,purchaseDate:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Account</label>
+              <select value={newAsset.accountType} onChange={e=>setNewAsset(a=>({...a,accountType:e.target.value}))}>
+                <option value="taxable">Taxable</option><option value="ira">IRA</option>
+                <option value="401k">401(k)</option><option value="roth">Roth IRA</option></select></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Type</label>
+              <select value={newAsset.assetType} onChange={e=>setNewAsset(a=>({...a,assetType:e.target.value}))}>
+                <option value="stock">Stock</option><option value="etf">ETF</option>
+                <option value="crypto">Crypto</option><option value="other">Other</option></select></div>
+          </div>
+          {addErr && <div style={{fontSize:12,color:'#fc8181',marginBottom:8}}>{addErr}</div>}
+          <button className="btn btn-success" onClick={addAsset}>Add Asset</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PortfolioTab({ state, dispatch }) {
+  const { assets, livePrices, pricesFetching, pricesFetched, apiKeys } = state;
+  const [fetchError, setFetchError] = useState('');
+  const [editId, setEditId] = useState(null);
+  const [editData, setEditData] = useState({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [newAsset, setNewAsset] = useState({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
+  const [addErr, setAddErr] = useState('');
+  // Lot UI state
+  const [expandedAsset, setExpandedAsset] = useState(null); // assetId
+  const [showAddLot, setShowAddLot] = useState(null);       // assetId
+  const [newLot, setNewLot] = useState({ shares:1, costBasis:0, purchaseDate:'' });
+  const [lotErr, setLotErr] = useState('');
+
+  const addLot = async (assetId) => {
+    if (!newLot.shares || !newLot.costBasis) return setLotErr('Shares and cost basis required');
+    setLotErr('');
+    try {
+      const { lot, asset } = await apiPost(`/api/assets/${assetId}/lots`, {
+        shares: +newLot.shares, costBasis: +newLot.costBasis, purchaseDate: newLot.purchaseDate || null,
+      });
+      dispatch({ type:'ADD_LOT', assetId, lot, asset });
+      setNewLot({ shares:1, costBasis:0, purchaseDate:'' });
+      setShowAddLot(null);
+    } catch(e) { setLotErr(e.message); }
+  };
+
+  const removeLot = async (assetId, lotId) => {
+    try {
+      const { asset } = await apiDelete(`/api/assets/${assetId}/lots/${lotId}`);
+      dispatch({ type:'REMOVE_LOT', assetId, lotId, asset });
+    } catch(e) { alert(e.message); }
+  };
+
+  const fetchPrices = useCallback(async () => {
+    if (pricesFetching) return;
+    dispatch({ type:'PRICES_FETCHING' });
+    setFetchError('');
+    const prices = {};
+    const errors = [];
+    for (const asset of assets) {
+      try {
+        if (asset.assetType === 'crypto') {
+          const coinId = CRYPTO_IDS[asset.ticker.toUpperCase()] || asset.ticker.toLowerCase();
+          prices[asset.ticker] = await fetchCryptoPrice(coinId);
+        } else if (asset.assetType !== 'other' && apiKeys.alphaVantage) {
+          // Server proxy handles rate limiting (13s between calls) and caching (15 min)
+          prices[asset.ticker] = await fetchStockPrice(asset.ticker);
+        }
+      } catch(e) { errors.push(`${asset.ticker}: ${e.message}`); }
+    }
+    dispatch({ type:'SET_PRICES', prices });
+    apiPost('/api/market-cache', { type: 'prices', data: prices }).catch(() => {});
+    if (errors.length) setFetchError(errors.join(' | '));
+  }, [assets, apiKeys, pricesFetching]);
+
+  const enriched = useMemo(() => assets.map(a => {
+    const lp = livePrices[a.ticker];
+    const price = lp ? lp.price : a.costBasis;
+    const value = price * a.shares;
+    const costTotal = a.costBasis * a.shares;
+    const gain = value - costTotal;
+    const gainPct = costTotal > 0 ? (gain/costTotal*100) : 0;
+    return { ...a, currentPrice:price, value, gain, gainPct, changePct:lp?.changePct||null };
+  }), [assets, livePrices]);
+
+  const totalValue = enriched.reduce((s,a) => s+a.value, 0);
+
+  const typeGroups = useMemo(() => {
+    const m = {};
+    enriched.forEach(a => { m[a.assetType] = (m[a.assetType]||0) + a.value; });
+    return Object.entries(m).map(([type,val]) => ({
+      type, val, pct: totalValue>0 ? val/totalValue*100 : 0
+    })).sort((a,b) => b.val-a.val);
+  }, [enriched, totalValue]);
+
+  const addAsset = async () => {
+    if (!newAsset.ticker.trim()) return setAddErr('Ticker required');
+    setAddErr('');
+    try {
+      const saved = await apiPost('/api/assets', {
+        ...newAsset, ticker:newAsset.ticker.toUpperCase(),
+        shares:+newAsset.shares, costBasis:+newAsset.costBasis,
+        purchaseDate: newAsset.purchaseDate || null,
+      });
+      dispatch({ type:'ADD_ASSET', item:saved });
+      setNewAsset({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
+      setShowAdd(false);
+    } catch(e) { setAddErr(e.message); }
+  };
+
+  const startEdit = a => { setEditId(a.id); setEditData({ shares:a.shares, costBasis:a.costBasis, accountType:a.accountType, assetType:a.assetType||'stock' }); };
+  const saveEdit = async (id) => {
+    try {
+      const updated = await apiPut(`/api/assets/${id}`, {
+        shares:+editData.shares, costBasis:+editData.costBasis, accountType:editData.accountType, assetType:editData.assetType,
+      });
+      dispatch({ type:'UPDATE_ASSET', id, data:updated });
+    } catch(e) {}
+    setEditId(null);
+  };
+  const removeAsset = async (id) => {
+    try { await apiDelete(`/api/assets/${id}`); dispatch({ type:'REMOVE_ASSET', id }); } catch(e) {}
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <div style={{fontSize:12,color:'#718096'}}>Total Portfolio Value</div>
+          <div style={{fontSize:26,fontWeight:700}}>{fmtFull(totalValue)}</div>
+        </div>
+        <div className="flex gap-2 items-center">
+          {pricesFetching && <span className="spinner" />}
+          {fetchError && <span style={{fontSize:11,color:'#fc8181',maxWidth:280}}>{fetchError}</span>}
+          {!apiKeys.alphaVantage && <span style={{fontSize:11,color:'#718096'}}>Add Alpha Vantage key for live prices</span>}
+          <button className="btn btn-secondary" onClick={fetchPrices} disabled={pricesFetching||assets.length===0}>
+            {pricesFetching?'Fetching…':pricesFetched?'↻ Refresh':'Fetch Live Prices'}
+          </button>
+          <button className="btn btn-primary" onClick={()=>setShowAdd(v=>!v)}>
+            {showAdd?'Cancel':'+ Add Asset'}
+          </button>
+        </div>
+      </div>
+
+      {showAdd && (
+        <AddAssetPanel
+          newAsset={newAsset} setNewAsset={setNewAsset}
+          addAsset={addAsset} addErr={addErr}
+          apiKey={apiKeys.anthropic}
+          onParsed={items => {
+            // Queue parsed assets — user confirms each in the form
+            if (items.length > 0) setNewAsset({...items[0], purchaseDate: items[0].purchaseDate||''});
+          }}
+        />
+      )}
+
+      <div className="card mb-6" style={{padding:0,overflow:'hidden'}}>
+        <table>
+          <thead><tr>
+            <th>Ticker</th><th>Name</th><th>Shares</th><th>Price</th>
+            <th>Value</th><th>Cost Basis</th><th>Gain/Loss</th><th>Day %</th><th>Account</th><th>Type</th><th>Weight</th><th></th>
+          </tr></thead>
+          <tbody>
+            {enriched.length === 0 && (
+              <tr><td colSpan="12" className="tc gray" style={{padding:24}}>No assets — click "+ Add Asset" above</td></tr>
+            )}
+            {enriched.map(a => (
+              editId === a.id ? (
+                <tr key={a.id} style={{background:'#1e2536'}}>
+                  <td className="bold">{a.ticker}</td>
+                  <td colSpan="2">
+                    <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Shares</div>
+                    <input type="number" value={editData.shares} onChange={e=>setEditData(d=>({...d,shares:e.target.value}))} style={{width:80}} />
+                  </td>
+                  <td colSpan="2">
+                    <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Cost/Share $</div>
+                    <input type="number" step="any" value={editData.costBasis} onChange={e=>setEditData(d=>({...d,costBasis:e.target.value}))} style={{width:100}} />
+                  </td>
+                  <td><select value={editData.accountType} onChange={e=>setEditData(d=>({...d,accountType:e.target.value}))} style={{width:90}}>
+                    <option value="taxable">Taxable</option><option value="ira">IRA</option>
+                    <option value="401k">401(k)</option><option value="roth">Roth</option>
+                  </select></td>
+                  <td><select value={editData.assetType} onChange={e=>setEditData(d=>({...d,assetType:e.target.value}))} style={{width:80}}>
+                    <option value="stock">Stock</option><option value="etf">ETF</option>
+                    <option value="crypto">Crypto</option><option value="other">Other</option>
+                  </select></td>
+                  <td colSpan="4">
+                    <button className="btn btn-success btn-sm" onClick={()=>saveEdit(a.id)}>Save</button>{' '}
+                    <button className="btn btn-secondary btn-sm" onClick={()=>setEditId(null)}>Cancel</button>
+                  </td>
+                </tr>
+              ) : (
+                <React.Fragment key={a.id}>
+                  <tr>
+                    <td>
+                      <span className="bold" style={{cursor:'pointer'}} onClick={()=>setExpandedAsset(v=>v===a.id?null:a.id)}>
+                        {expandedAsset===a.id?'▼ ':'▶ '}{a.ticker}
+                      </span>
+                    </td>
+                    <td className="gray" style={{maxWidth:140,overflow:'hidden',textOverflow:'ellipsis'}}>{a.name||'—'}</td>
+                    <td>{(+a.shares).toLocaleString()}</td>
+                    <td>{a.currentPrice?`$${a.currentPrice.toFixed(2)}`:<span className="gray">—</span>}</td>
+                    <td className="bold">{fmtFull(a.value)}</td>
+                    <td className="gray">{fmtFull(a.costBasis*a.shares)} <span style={{fontSize:10,color:'#718096'}}>({(+a.lots?.length||1)} lot{a.lots?.length!==1?'s':''})</span></td>
+                    <td className={a.gain>=0?'green':'red'}>{fmtFull(a.gain)} <span style={{fontSize:11}}>({fmtPct(a.gainPct)})</span></td>
+                    <td className={a.changePct===null?'gray':a.changePct>=0?'green':'red'}>
+                      {a.changePct===null?'—':fmtPct(a.changePct)}
+                    </td>
+                    <td><span className="badge b-blue">{a.accountType}</span></td>
+                    <td><span className={`badge ${a.assetType==='other'?'b-gray':a.assetType==='crypto'?'b-green':'b-blue'}`} style={{textTransform:'capitalize'}}>{a.assetType||'stock'}</span></td>
+                    <td className="gray">{totalValue>0?(a.value/totalValue*100).toFixed(1):0}%</td>
+                    <td className="flex gap-2">
+                      <button className="btn btn-secondary btn-sm" onClick={()=>startEdit(a)}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={()=>removeAsset(a.id)}>×</button>
+                    </td>
+                  </tr>
+                  {expandedAsset === a.id && (
+                    <tr style={{background:'#0f1117'}}>
+                      <td colSpan="12" style={{padding:'10px 16px'}}>
+                        <div style={{fontSize:12,color:'#a0aec0',marginBottom:6}}>Purchase Lots</div>
+                        <table style={{width:'100%',fontSize:12}}>
+                          <thead><tr style={{color:'#718096'}}>
+                            <th style={{textAlign:'left',paddingBottom:4}}>Date</th>
+                            <th style={{textAlign:'right'}}>Shares</th>
+                            <th style={{textAlign:'right'}}>Cost/Share</th>
+                            <th style={{textAlign:'right'}}>Total Cost</th>
+                            <th style={{textAlign:'right'}}>Curr. Value</th>
+                            <th style={{textAlign:'right'}}>Gain/Loss</th>
+                            <th></th>
+                          </tr></thead>
+                          <tbody>
+                            {(a.lots||[]).map(lot => {
+                              const lotValue = (livePrices[a.ticker]?.price||a.costBasis) * lot.shares;
+                              const lotCost = lot.costBasis * lot.shares;
+                              const lotGain = lotValue - lotCost;
+                              return (
+                                <tr key={lot.id} style={{borderTop:'1px solid #1a1f2e'}}>
+                                  <td style={{padding:'4px 0',color:'#a0aec0'}}>{lot.purchaseDate||'—'}</td>
+                                  <td style={{textAlign:'right'}}>{lot.shares}</td>
+                                  <td style={{textAlign:'right'}}>{fmtFull(lot.costBasis)}</td>
+                                  <td style={{textAlign:'right',color:'#a0aec0'}}>{fmtFull(lotCost)}</td>
+                                  <td style={{textAlign:'right'}}>{fmtFull(lotValue)}</td>
+                                  <td style={{textAlign:'right'}} className={lotGain>=0?'green':'red'}>{fmtFull(lotGain)}</td>
+                                  <td style={{textAlign:'right'}}>
+                                    {(a.lots||[]).length > 1 && (
+                                      <button className="btn btn-danger btn-sm" style={{padding:'1px 6px',fontSize:10}} onClick={()=>removeLot(a.id,lot.id)}>×</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        {showAddLot === a.id ? (
+                          <div style={{marginTop:8,display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}}>
+                            <div>
+                              <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Date (optional)</div>
+                              <input type="date" value={newLot.purchaseDate} onChange={e=>setNewLot(l=>({...l,purchaseDate:e.target.value}))} style={{width:130}} />
+                            </div>
+                            <div>
+                              <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Shares</div>
+                              <input type="number" step="any" value={newLot.shares} onChange={e=>setNewLot(l=>({...l,shares:e.target.value}))} style={{width:80}} />
+                            </div>
+                            <div>
+                              <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Cost/Share $</div>
+                              <input type="number" step="any" value={newLot.costBasis} onChange={e=>setNewLot(l=>({...l,costBasis:e.target.value}))} style={{width:90}} />
+                            </div>
+                            {lotErr && <span style={{fontSize:11,color:'#fc8181'}}>{lotErr}</span>}
+                            <button className="btn btn-success btn-sm" onClick={()=>addLot(a.id)}>Save Lot</button>
+                            <button className="btn btn-secondary btn-sm" onClick={()=>{setShowAddLot(null);setLotErr('');}}>Cancel</button>
+                          </div>
+                        ) : (
+                          <button className="btn btn-secondary btn-sm" style={{marginTop:8}} onClick={()=>{setShowAddLot(a.id);setNewLot({shares:1,costBasis:0,purchaseDate:''});}}>+ Add Lot</button>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {typeGroups.length > 0 && (
+        <div className="card mb-6">
+          <div className="section-title">Allocation by Asset Type</div>
+          {typeGroups.map(g => (
+            <div key={g.type} className="flex items-center gap-4 mb-2">
+              <div style={{width:90,fontSize:12,color:'#a0aec0',textTransform:'capitalize'}}>{g.type}</div>
+              <div className="progress-track flex-1">
+                <div className="progress-fill" style={{width:`${g.pct}%`,background:'#3182ce'}} />
+              </div>
+              <div style={{width:120,textAlign:'right',fontSize:12}}>
+                <span className="bold">{fmtFull(g.val)}</span>
+                <span className="gray"> ({g.pct.toFixed(1)}%)</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {enriched.length > 0 && (
+        <div className="card">
+          <div className="section-title">Holdings Distribution</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={enriched.map(a=>({name:a.ticker,value:Math.round(a.value)})).sort((a,b)=>b.value-a.value)} margin={{top:5,right:20,bottom:5,left:10}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+              <XAxis dataKey="name" tick={{fill:'#a0aec0',fontSize:11}} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+              <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+              <Bar dataKey="value" fill="#3182ce" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// DEBT TAB
+// =============================================================================
+function DebtTab({ state, dispatch }) {
+  const { liabilities } = state;
+  const [extra, setExtra] = useState(0);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newLiab, setNewLiab] = useState({ name:'', type:'mortgage', balance:0, apr:5, minPayment:0 });
+  const [addErr, setAddErr] = useState('');
+
+  const totalDebt    = liabilities.reduce((s,l) => s+l.balance, 0);
+  const totalMinPay  = liabilities.reduce((s,l) => s+l.minPayment, 0);
+  const weightedAPR  = totalDebt > 0 ? liabilities.reduce((s,l) => s+l.apr*l.balance, 0)/totalDebt : 0;
+
+  const avalanche = useMemo(() => {
+    if (!liabilities.length) return {months:0,totalInterest:0};
+    let rem = liabilities.map(d=>({...d,bal:d.balance}));
+    let month=0, totalInterest=0;
+    while (rem.some(d=>d.bal>0.01) && month<600) {
+      month++;
+      let budget = liabilities.reduce((s,d)=>s+d.minPayment,0) + extra;
+      rem = [...rem].sort((a,b)=>b.apr-a.apr);
+      for (const d of rem) {
+        if (d.bal<=0) continue;
+        const int = d.bal*(d.apr/100/12);
+        totalInterest+=int; d.bal+=int;
+        const pay=Math.min(d.bal,budget); d.bal-=pay; budget-=pay;
+        if (budget<=0.01) break;
+      }
+    }
+    return {months:month, totalInterest:Math.round(totalInterest)};
+  }, [liabilities, extra]);
+
+  const snowball = useMemo(() => {
+    if (!liabilities.length) return {months:0,totalInterest:0};
+    let rem = liabilities.map(d=>({...d,bal:d.balance}));
+    let month=0, totalInterest=0;
+    while (rem.some(d=>d.bal>0.01) && month<600) {
+      month++;
+      let budget = liabilities.reduce((s,d)=>s+d.minPayment,0) + extra;
+      rem = [...rem].sort((a,b)=>a.bal-b.bal);
+      for (const d of rem) {
+        if (d.bal<=0) continue;
+        const int = d.bal*(d.apr/100/12);
+        totalInterest+=int; d.bal+=int;
+        const pay=Math.min(d.bal,budget); d.bal-=pay; budget-=pay;
+        if (budget<=0.01) break;
+      }
+    }
+    return {months:month, totalInterest:Math.round(totalInterest)};
+  }, [liabilities, extra]);
+
+  const typeColors = { mortgage:'#3182ce', credit_card:'#fc8181', student:'#68d391', auto:'#f6ad55', other:'#b794f4' };
+
+  const addLiability = async () => {
+    if (!newLiab.name.trim()) return setAddErr('Name required');
+    setAddErr('');
+    try {
+      const saved = await apiPost('/api/liabilities', {
+        ...newLiab, balance:+newLiab.balance, apr:+newLiab.apr, minPayment:+newLiab.minPayment,
+      });
+      dispatch({ type:'ADD_LIABILITY', item:saved });
+      setNewLiab({ name:'', type:'mortgage', balance:0, apr:5, minPayment:0 });
+      setShowAdd(false);
+    } catch(e) { setAddErr(e.message); }
+  };
+
+  const removeLiability = async (id) => {
+    try { await apiDelete(`/api/liabilities/${id}`); dispatch({ type:'REMOVE_LIABILITY', id }); } catch(e) {}
+  };
+
+  return (
+    <div>
+      <div className="grid g3 gap-4 mb-6">
+        <div className="card card-sm"><div className="card-title">Total Debt</div><div className="card-value red">{fmtFull(totalDebt)}</div></div>
+        <div className="card card-sm">
+          <div className="card-title">Weighted APR</div>
+          <div className="card-value">{weightedAPR.toFixed(2)}%</div>
+          <div style={{fontSize:12,color:'#718096'}}>Min payment {fmtFull(totalMinPay)}/mo</div>
+        </div>
+        <div className="card card-sm">
+          <div className="card-title">Interest Saved (Avalanche)</div>
+          <div className="card-value green">{fmtFull(snowball.totalInterest-avalanche.totalInterest)}</div>
+          <div style={{fontSize:12,color:'#718096'}}>vs Snowball method</div>
+        </div>
+      </div>
+
+      <div className="card mb-6" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 16px'}} className="flex items-center justify-between">
+          <span className="section-title" style={{marginBottom:0}}>Your Debts</span>
+          <button className="btn btn-primary btn-sm" onClick={()=>setShowAdd(v=>!v)}>
+            {showAdd?'Cancel':'+ Add Debt'}
+          </button>
+        </div>
+        {showAdd && (
+          <div style={{padding:'0 16px 16px'}}>
+            <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
+              <div className="form-group" style={{marginBottom:0}}><label>Name</label>
+                <input value={newLiab.name} onChange={e=>setNewLiab(l=>({...l,name:e.target.value}))} placeholder="Chase Mortgage" /></div>
+              <div className="form-group" style={{marginBottom:0}}><label>Type</label>
+                <select value={newLiab.type} onChange={e=>setNewLiab(l=>({...l,type:e.target.value}))}>
+                  <option value="mortgage">Mortgage</option><option value="auto">Auto</option>
+                  <option value="student">Student Loan</option><option value="credit_card">Credit Card</option>
+                  <option value="other">Other</option></select></div>
+              <div className="form-group" style={{marginBottom:0}}><label>Balance ($)</label>
+                <input type="number" min="0" value={newLiab.balance} onChange={e=>setNewLiab(l=>({...l,balance:e.target.value}))} /></div>
+              <div className="form-group" style={{marginBottom:0}}><label>APR (%)</label>
+                <input type="number" min="0" step="0.1" value={newLiab.apr} onChange={e=>setNewLiab(l=>({...l,apr:e.target.value}))} /></div>
+              <div className="form-group" style={{marginBottom:0}}><label>Min Payment ($)</label>
+                <input type="number" min="0" value={newLiab.minPayment} onChange={e=>setNewLiab(l=>({...l,minPayment:e.target.value}))} /></div>
+            </div>
+            {addErr && <div style={{fontSize:12,color:'#fc8181',marginBottom:8}}>{addErr}</div>}
+            <button className="btn btn-success btn-sm" onClick={addLiability}>Add Debt</button>
+          </div>
+        )}
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Balance</th><th>APR</th><th>Min Payment</th><th>Payoff*</th><th></th></tr></thead>
+          <tbody>
+            {liabilities.length===0 && (
+              <tr><td colSpan="7" className="tc gray" style={{padding:20}}>No debts added</td></tr>
+            )}
+            {liabilities.map(l => {
+              const moEst = l.balance>0&&l.minPayment>0
+                ? Math.ceil(-Math.log(1-(l.apr/100/12)*l.balance/l.minPayment)/Math.log(1+l.apr/100/12))
+                : null;
+              return (
+                <tr key={l.id}>
+                  <td className="bold">{l.name}</td>
+                  <td><span className="badge" style={{background:'#1e2536',color:typeColors[l.type]||'#a0aec0'}}>{l.type.replace('_',' ')}</span></td>
+                  <td className="bold red">{fmtFull(l.balance)}</td>
+                  <td className={l.apr>10?'red':l.apr>5?'yellow':'green'}>{l.apr}%</td>
+                  <td>{fmtFull(l.minPayment)}/mo</td>
+                  <td className="gray">{moEst&&moEst>0&&isFinite(moEst)?`${moEst} mo`:'—'}</td>
+                  <td><button className="btn btn-danger btn-sm" onClick={()=>removeLiability(l.id)}>×</button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{padding:'8px 16px',fontSize:11,color:'#4a5568'}}>*At minimum payment only</div>
+      </div>
+
+      {liabilities.length > 0 && (
+        <div className="card">
+          <div className="section-title">Payoff Strategy Comparison</div>
+          <div className="flex items-center gap-4 mb-4">
+            <label style={{fontSize:13,color:'#a0aec0',whiteSpace:'nowrap'}}>Extra monthly payment: </label>
+            <input type="number" min="0" value={extra} onChange={e=>setExtra(+e.target.value)} style={{width:120}} placeholder="$0" />
+          </div>
+          <div className="grid g2 gap-4 mb-4">
+            <div style={{background:'#0f1117',padding:16,borderRadius:8,border:'1px solid #2d3748'}}>
+              <div style={{fontSize:12,color:'#718096',marginBottom:4}}>Avalanche (Pay Highest APR First)</div>
+              <div style={{fontSize:20,fontWeight:700,color:'#68d391'}}>{avalanche.months} months</div>
+              <div style={{fontSize:13,color:'#a0aec0'}}>{fmtFull(avalanche.totalInterest)} total interest</div>
+            </div>
+            <div style={{background:'#0f1117',padding:16,borderRadius:8,border:'1px solid #2d3748'}}>
+              <div style={{fontSize:12,color:'#718096',marginBottom:4}}>Snowball (Pay Smallest Balance First)</div>
+              <div style={{fontSize:20,fontWeight:700,color:'#f6ad55'}}>{snowball.months} months</div>
+              <div style={{fontSize:13,color:'#a0aec0'}}>{fmtFull(snowball.totalInterest)} total interest</div>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={[
+              {name:'Avalanche (Optimal)',months:avalanche.months,interest:avalanche.totalInterest},
+              {name:'Snowball (Motivating)',months:snowball.months,interest:snowball.totalInterest},
+            ]} layout="vertical" margin={{left:10,right:40}}>
+              <XAxis type="number" tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{fill:'#a0aec0',fontSize:11}} axisLine={false} tickLine={false} width={160} />
+              <Tooltip formatter={(v,n)=>[n==='interest'?fmtFull(v):`${v} mo`,n==='interest'?'Interest Paid':'Months']}
+                contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+              <Bar dataKey="interest" name="interest" fill="#fc8181" radius={[0,4,4,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// GOALS TAB
+// =============================================================================
+function GoalsTab({ state, dispatch }) {
+  const { goals } = state;
+  const [showAdd, setShowAdd] = useState(false);
+  const [newGoal, setNewGoal] = useState({ name:'', targetAmount:0, targetDate:'', currentSaved:0, priority:'medium' });
+  const [addErr, setAddErr] = useState('');
+  const [editSaved, setEditSaved] = useState({});
+  const today = new Date();
+
+  const addGoal = async () => {
+    if (!newGoal.name.trim() || !newGoal.targetDate) return setAddErr('Name and target date required');
+    setAddErr('');
+    try {
+      const saved = await apiPost('/api/goals', {
+        ...newGoal, targetAmount:+newGoal.targetAmount, currentSaved:+newGoal.currentSaved,
+      });
+      dispatch({ type:'ADD_GOAL', item:saved });
+      setNewGoal({ name:'', targetAmount:0, targetDate:'', currentSaved:0, priority:'medium' });
+      setShowAdd(false);
+    } catch(e) { setAddErr(e.message); }
+  };
+
+  const removeGoal = async (id) => {
+    try { await apiDelete(`/api/goals/${id}`); dispatch({ type:'REMOVE_GOAL', id }); } catch(e) {}
+  };
+
+  const updateSaved = async (g) => {
+    const val = parseFloat(editSaved[g.id]);
+    if (isNaN(val)) return;
+    try {
+      const updated = await apiPut(`/api/goals/${g.id}`, {...g, currentSaved:val});
+      dispatch({ type:'UPDATE_GOAL', id:g.id, data:updated });
+      setEditSaved(s => { const n={...s}; delete n[g.id]; return n; });
+    } catch(e) {}
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="section-title" style={{marginBottom:0}}>Financial Goals</div>
+        <button className="btn btn-primary btn-sm" onClick={()=>setShowAdd(v=>!v)}>
+          {showAdd?'Cancel':'+ Add Goal'}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="card mb-6">
+          <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
+            <div className="form-group" style={{marginBottom:0}}><label>Goal Name</label>
+              <input value={newGoal.name} onChange={e=>setNewGoal(g=>({...g,name:e.target.value}))} placeholder="Down payment…" /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Target Amount ($)</label>
+              <input type="number" min="0" value={newGoal.targetAmount} onChange={e=>setNewGoal(g=>({...g,targetAmount:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Target Date</label>
+              <input type="date" value={newGoal.targetDate} onChange={e=>setNewGoal(g=>({...g,targetDate:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Already Saved ($)</label>
+              <input type="number" min="0" value={newGoal.currentSaved} onChange={e=>setNewGoal(g=>({...g,currentSaved:e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Priority</label>
+              <select value={newGoal.priority} onChange={e=>setNewGoal(g=>({...g,priority:e.target.value}))}>
+                <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+              </select></div>
+          </div>
+          {addErr && <div style={{fontSize:12,color:'#fc8181',marginBottom:8}}>{addErr}</div>}
+          <button className="btn btn-success" onClick={addGoal}>Add Goal</button>
+        </div>
+      )}
+
+      {goals.length === 0 && !showAdd && (
+        <div className="card tc gray" style={{padding:40}}>No goals set — click "+ Add Goal" to start</div>
+      )}
+
+      <div className="grid g2 gap-4">
+        {goals.map(g => {
+          const months = monthsBetween(today, g.targetDate);
+          const remaining = Math.max(0, g.targetAmount - g.currentSaved);
+          const monthlyNeeded = months > 0 ? remaining/months : remaining;
+          const pct = g.targetAmount > 0 ? Math.min(100, g.currentSaved/g.targetAmount*100) : 0;
+          const onTrack = monthlyNeeded < (state.profile.annualIncome/12*0.2);
+          const isEditing = editSaved[g.id] !== undefined;
+
+          return (
+            <div key={g.id} className="card">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="bold" style={{fontSize:15}}>{g.name}</div>
+                  <div style={{fontSize:12,color:'#718096'}}>Target: {fmtDate(g.targetDate)} · {months} months away</div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <span className={`badge ${g.priority==='high'?'b-red':g.priority==='medium'?'b-yellow':'b-blue'}`}>{g.priority}</span>
+                  <button className="btn btn-danger btn-sm" onClick={()=>removeGoal(g.id)}>×</button>
+                </div>
+              </div>
+              <div className="progress-track mb-2">
+                <div className="progress-fill" style={{width:`${pct}%`,background:pct>=100?'#68d391':'#3182ce'}} />
+              </div>
+              <div className="flex justify-between" style={{fontSize:12}}>
+                <span className="gray">{fmtFull(g.currentSaved)} saved</span>
+                <span className="bold">{pct.toFixed(0)}%</span>
+                <span className="gray">{fmtFull(g.targetAmount)} goal</span>
+              </div>
+              <hr className="divider" />
+              <div className="grid g2 gap-2" style={{fontSize:12}}>
+                <div><span className="gray">Remaining: </span><span className="bold">{fmtFull(remaining)}</span></div>
+                <div><span className="gray">Monthly needed: </span>
+                  <span className={`bold ${onTrack?'green':'yellow'}`}>{fmtFull(monthlyNeeded)}/mo</span>
+                </div>
+              </div>
+              <div className="flex gap-2 items-center mt-2">
+                <input type="number" min="0" placeholder="Update saved amount"
+                  value={isEditing ? editSaved[g.id] : ''}
+                  onChange={e=>setEditSaved(s=>({...s,[g.id]:e.target.value}))}
+                  style={{flex:1,fontSize:12}} />
+                {isEditing && <button className="btn btn-success btn-sm" onClick={()=>updateSaved(g)}>Update</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {goals.length > 0 && (
+        <div className="card mt-4">
+          <div className="section-title">Goals Progress Overview</div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={goals.map(g=>({
+              name: g.name.length>12?g.name.slice(0,12)+'…':g.name,
+              saved: g.currentSaved,
+              remaining: Math.max(0,g.targetAmount-g.currentSaved),
+            }))} margin={{top:5,right:20,bottom:5,left:10}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+              <XAxis dataKey="name" tick={{fill:'#a0aec0',fontSize:11}} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false} />
+              <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:12}} />
+              <Legend iconSize={10} wrapperStyle={{fontSize:11}} />
+              <Bar dataKey="saved" name="Saved" stackId="a" fill="#68d391" radius={[0,0,0,0]} />
+              <Bar dataKey="remaining" name="Remaining" stackId="a" fill="#2d3748" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// MODELS TAB
+// =============================================================================
+function ModelsTab({ state }) {
+  const { profile, assets, liabilities, cash, livePrices } = state;
+  const [mcParams, setMcParams] = useState({ retirementAge:65, monthlyContribution:2000, withdrawalRate:4, extraReturn:0 });
+  const [mcResult, setMcResult] = useState(null);
+  const [running, setRunning] = useState(false);
+
+  const totalPortfolio = useMemo(() =>
+    assets.reduce((s,a) => s + (livePrices[a.ticker]?.price||a.costBasis)*a.shares, 0) +
+    cash.reduce((s,c)=>s+c.amount,0),
+  [assets, livePrices, cash]);
+
+  const runSim = () => {
+    setRunning(true);
+    setTimeout(() => {
+      const result = runMonteCarlo({
+        currentAge: profile.age,
+        retirementAge: mcParams.retirementAge,
+        currentSavings: totalPortfolio,
+        monthlyContribution: mcParams.monthlyContribution,
+        annualReturnMean: 0.07 + mcParams.extraReturn/100,
+        annualReturnStd: 0.15,
+        runs: 1000,
+      });
+      setMcResult(result);
+      setRunning(false);
+    }, 50);
+  };
+
+  const annualWR = mcParams.withdrawalRate / 100;
+
+  const scenarios = useMemo(() => [
+    { label:'Bear (-2%)', mean:-0.02 },
+    { label:'Conservative (4%)', mean:0.04 },
+    { label:'Base (7%)', mean:0.07 },
+    { label:'Bull (10%)', mean:0.10 },
+    { label:'Optimistic (12%)', mean:0.12 },
+  ].map(s => {
+    const r = runMonteCarlo({
+      currentAge:profile.age, retirementAge:mcParams.retirementAge,
+      currentSavings:totalPortfolio, monthlyContribution:mcParams.monthlyContribution,
+      annualReturnMean:s.mean, annualReturnStd:0.15, runs:500,
+    });
+    return { ...s, median:r.p50, income:r.p50*annualWR };
+  }), [profile.age, mcParams, totalPortfolio, annualWR]);
+
+  return (
+    <div>
+      <div className="grid g2 gap-6 mb-6">
+        <div className="card">
+          <div className="section-title">Monte Carlo Retirement Simulation</div>
+          <div style={{fontSize:12,color:'#718096',marginBottom:16}}>
+            1,000 random market scenarios · Current portfolio: <span className="bold">{fmtFull(totalPortfolio)}</span>
+          </div>
+          <div className="grid g2 gap-4 mb-4">
+            <div className="form-group" style={{marginBottom:0}}><label>Target Retirement Age</label>
+              <input type="number" min={profile.age+1} max="85" value={mcParams.retirementAge}
+                onChange={e=>setMcParams(p=>({...p,retirementAge:+e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Monthly Contribution ($)</label>
+              <input type="number" min="0" value={mcParams.monthlyContribution}
+                onChange={e=>setMcParams(p=>({...p,monthlyContribution:+e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Withdrawal Rate (% SWR)</label>
+              <input type="number" min="1" max="10" step="0.5" value={mcParams.withdrawalRate}
+                onChange={e=>setMcParams(p=>({...p,withdrawalRate:+e.target.value}))} /></div>
+            <div className="form-group" style={{marginBottom:0}}><label>Extra Return Adj. (%)</label>
+              <input type="number" min="-5" max="5" step="0.5" value={mcParams.extraReturn}
+                onChange={e=>setMcParams(p=>({...p,extraReturn:+e.target.value}))} /></div>
+          </div>
+          <button className="btn btn-primary" onClick={runSim} disabled={running}>
+            {running ? 'Running 1,000 simulations…' : 'Run Simulation'}
+          </button>
+          {mcResult && (
+            <div className="mt-4">
+              <div className="grid g3 gap-3 mb-4">
+                {[['P10 (Pessimistic)',mcResult.p10,'red'],['P50 (Median)',mcResult.p50,'blue'],['P90 (Optimistic)',mcResult.p90,'green']].map(([l,v,c])=>(
+                  <div key={l} style={{background:'#0f1117',padding:12,borderRadius:8,border:'1px solid #2d3748'}}>
+                    <div style={{fontSize:11,color:'#718096'}}>{l}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:c==='red'?'#fc8181':c==='green'?'#68d391':'#63b3ed'}}>{fmt(v)}</div>
+                    <div style={{fontSize:11,color:'#718096'}}>{fmtFull(v*annualWR)}/yr income</div>
+                  </div>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={mcResult.chartData} margin={{top:5,right:10,bottom:0,left:10}}>
+                  <defs>
+                    <linearGradient id="mcGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3182ce" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#3182ce" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+                  <XAxis dataKey="year" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:11}} />
+                  <Area type="monotone" dataKey="median" stroke="#3182ce" fill="url(#mcGrad)" strokeWidth={2} dot={false} name="Median Path" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="section-title">Scenario Analysis</div>
+          <div style={{fontSize:12,color:'#718096',marginBottom:16}}>
+            Median retirement balance at age {mcParams.retirementAge} under different return assumptions
+          </div>
+          <table>
+            <thead><tr><th>Scenario</th><th className="tr">Median Portfolio</th><th className="tr">Annual Income ({mcParams.withdrawalRate}% SWR)</th></tr></thead>
+            <tbody>
+              {scenarios.map(s => (
+                <tr key={s.label}>
+                  <td>{s.label}</td>
+                  <td className="tr bold">{fmt(s.median)}</td>
+                  <td className="tr">{fmt(s.income)}<span className="gray" style={{fontSize:11}}>/yr</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <hr className="divider" />
+          <div className="section-title" style={{marginTop:8}}>Savings Rate Impact</div>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={[500,1000,1500,2000,3000,4000,5000].map(mc => {
+              const r = runMonteCarlo({currentAge:profile.age,retirementAge:mcParams.retirementAge,currentSavings:totalPortfolio,monthlyContribution:mc,annualReturnMean:0.07,annualReturnStd:0.15,runs:200});
+              return {mc:`$${mc/1000}K`,p50:r.p50};
+            })} margin={{top:5,right:10,bottom:0,left:10}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+              <XAxis dataKey="mc" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
+              <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:11}} />
+              <Line type="monotone" dataKey="p50" stroke="#68d391" strokeWidth={2} dot={{fill:'#68d391',r:3}} name="Median at Retirement" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// MARKET TAB
+// =============================================================================
+function MarketTab({ state, dispatch }) {
+  const { assets, apiKeys, news, macro, newsFetchedAt, macroFetchedAt } = state;
+  const [loading, setLoading] = useState({ news:false, macro:false });
+
+  const FRED_SERIES = [
+    { id:'FEDFUNDS', label:'Fed Funds Rate', unit:'%' },
+    { id:'CPIAUCSL', label:'CPI (Inflation)', unit:' index' },
+    { id:'UNRATE',   label:'Unemployment Rate', unit:'%' },
+    { id:'DGS10',    label:'10-Year Treasury', unit:'%' },
+  ];
+
+  const fetchNewsData = useCallback(async () => {
+    if (!apiKeys.finnhub) return;
+    setLoading(l=>({...l,news:true}));
+    const results = {}, errs = {};
+    for (const a of assets.filter(a=>a.assetType!=='crypto'&&a.assetType!=='other').slice(0,8)) {
+      try { results[a.ticker] = await fetchFinnhubNews(a.ticker); await sleep(300); }
+      catch(e) { errs[a.ticker] = e.message; }
+    }
+    const now = new Date().toISOString();
+    dispatch({ type:'SET_NEWS', data: results, fetchedAt: now });
+    apiPost('/api/market-cache', { type: 'news', data: results }).catch(() => {});
+    setLoading(l=>({...l,news:false}));
+  }, [assets, apiKeys.finnhub, dispatch]);
+
+  const fetchMacroData = useCallback(async () => {
+    if (!apiKeys.fred) return;
+    setLoading(l=>({...l,macro:true}));
+    const results = {};
+    for (const s of FRED_SERIES) {
+      try {
+        const data = await fetchFRED(s.id);
+        results[s.id] = data.slice(0,12).reverse();
+      } catch(e) {}
+      await sleep(200);
+    }
+    const now = new Date().toISOString();
+    dispatch({ type:'SET_MACRO', data: results, fetchedAt: now });
+    apiPost('/api/market-cache', { type: 'macro', data: results }).catch(() => {});
+    setLoading(l=>({...l,macro:false}));
+  }, [apiKeys.fred, dispatch]);
+
+  return (
+    <div>
+      <div className="card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>Macro Indicators</div>
+          <div className="flex gap-2 items-center">
+            {loading.macro && <span className="spinner" />}
+            {macroFetchedAt && !loading.macro && <span style={{fontSize:10,color:'#718096'}}>cached {new Date(macroFetchedAt).toLocaleDateString()}</span>}
+            {!apiKeys.fred && <span style={{fontSize:11,color:'#718096'}}>Add FRED API key for live macro data</span>}
+            <button className="btn btn-secondary btn-sm" onClick={fetchMacroData} disabled={loading.macro||!apiKeys.fred}>
+              {loading.macro?'Loading…':'Fetch Macro Data'}
+            </button>
+          </div>
+        </div>
+        <div className="grid g2 gap-4">
+          {FRED_SERIES.map(s => {
+            const obs = macro[s.id];
+            const latest = obs?.[obs.length-1];
+            const prev   = obs?.[obs.length-2];
+            const change = latest&&prev ? latest.value-prev.value : null;
+            return (
+              <div key={s.id} style={{background:'#0f1117',borderRadius:8,padding:14,border:'1px solid #2d3748'}}>
+                <div style={{fontSize:11,color:'#718096',marginBottom:4}}>{s.label}</div>
+                <div style={{fontSize:20,fontWeight:700}}>
+                  {latest ? `${latest.value.toFixed(2)}${s.unit}` : <span className="gray">—</span>}
+                  {change!==null && <span style={{fontSize:13,marginLeft:8,color:change>=0?'#fc8181':'#68d391'}}>{change>=0?'+':''}{change.toFixed(2)}</span>}
+                </div>
+                {obs&&obs.length>1 && (
+                  <ResponsiveContainer width="100%" height={50}>
+                    <LineChart data={obs} margin={{top:4,right:4,bottom:0,left:4}}>
+                      <Line type="monotone" dataKey="value" stroke="#3182ce" strokeWidth={1.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>News — Your Holdings</div>
+          <div className="flex gap-2 items-center">
+            {loading.news && <span className="spinner" />}
+            {newsFetchedAt && !loading.news && <span style={{fontSize:10,color:'#718096'}}>cached {new Date(newsFetchedAt).toLocaleDateString()}</span>}
+            {!apiKeys.finnhub && <span style={{fontSize:11,color:'#718096'}}>Add Finnhub API key for news</span>}
+            <button className="btn btn-secondary btn-sm" onClick={fetchNewsData} disabled={loading.news||!apiKeys.finnhub||assets.length===0}>
+              {loading.news?'Loading…':'Fetch News'}
+            </button>
+          </div>
+        </div>
+        {Object.keys(news).length===0 && (
+          <div className="gray tc" style={{padding:24,fontSize:13}}>
+            {assets.length===0?'Add assets to see relevant news':'Click "Fetch News" to load articles for your holdings'}
+          </div>
+        )}
+        {Object.entries(news).map(([ticker,articles]) => (
+          <div key={ticker} className="mb-6">
+            <div style={{fontSize:13,fontWeight:600,color:'#63b3ed',marginBottom:8}}>{ticker}</div>
+            {articles.length===0 && <div className="gray" style={{fontSize:12}}>No recent news</div>}
+            {articles.map((a,i) => (
+              <div key={i} style={{borderLeft:'2px solid #2d3748',paddingLeft:12,marginBottom:10}}>
+                <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>{a.headline}</div>
+                <div style={{fontSize:11,color:'#718096'}}>
+                  {a.source} · {new Date(a.datetime*1000).toLocaleDateString()}
+                  {a.url && <> · <a href={a.url} target="_blank" rel="noopener" style={{color:'#63b3ed'}}>Read →</a></>}
+                </div>
+                {a.summary && <div style={{fontSize:12,color:'#a0aec0',marginTop:4,lineHeight:1.5}}>{a.summary.slice(0,200)}{a.summary.length>200?'…':''}</div>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// AI AGENTS TAB
+// =============================================================================
+function buildContext(state) {
+  const { profile, assets, liabilities, cash, goals, livePrices } = state;
+  const totalPortfolio = assets.reduce((s,a)=>s+(livePrices[a.ticker]?.price||a.costBasis)*a.shares,0);
+  const totalCash = cash.reduce((s,c)=>s+c.amount,0);
+  const totalDebt = liabilities.reduce((s,l)=>s+l.balance,0);
+  const netWorth  = totalPortfolio + totalCash - totalDebt;
+  const assetLines = assets.map(a=>{
+    const price = livePrices[a.ticker]?.price||a.costBasis;
+    const val = price*a.shares;
+    const gainPct = a.costBasis>0?((val-a.costBasis*a.shares)/(a.costBasis*a.shares)*100).toFixed(1):'N/A';
+    return `  - ${a.ticker} (${a.assetType}): ${a.shares} shares @ $${price.toFixed(2)} = $${val.toFixed(0)} [${gainPct}% gain, ${a.accountType}]`;
+  }).join('\n');
+  const liabilityLines = liabilities.map(l=>`  - ${l.name} (${l.type}): $${l.balance.toFixed(0)} @ ${l.apr}% APR, min $${l.minPayment}/mo`).join('\n');
+  const cashLines = cash.map(c=>`  - ${c.name}: $${c.amount.toFixed(0)} @ ${c.apy}% APY`).join('\n');
+  const goalLines = goals.map(g=>{
+    const mo = monthsBetween(new Date(), g.targetDate);
+    const rem = Math.max(0,g.targetAmount-g.currentSaved);
+    return `  - ${g.name}: $${g.currentSaved.toFixed(0)}/$${g.targetAmount.toFixed(0)} saved (${mo} months to target), needs $${mo>0?(rem/mo).toFixed(0):rem}/mo`;
+  }).join('\n');
+  return `USER FINANCIAL PROFILE:
+Name: ${profile.name} | Age: ${profile.age} | Income: $${(profile.annualIncome||0).toLocaleString()}/yr | Tax Rate: ${profile.marginalTaxRateOverride ?? calcMarginalRate(profile.annualIncome, profile.filingStatus)}%
+Risk Tolerance: ${profile.riskTolerance}/5 | Primary Goal: ${profile.primaryGoal}
+
+NET WORTH: $${netWorth.toFixed(0)}
+  Portfolio: $${totalPortfolio.toFixed(0)}
+  Cash: $${totalCash.toFixed(0)}
+  Total Debt: $${totalDebt.toFixed(0)}
+
+INVESTMENT PORTFOLIO:
+${assetLines||'  (none)'}
+
+LIABILITIES:
+${liabilityLines||'  (none)'}
+
+CASH & SAVINGS:
+${cashLines||'  (none)'}
+
+FINANCIAL GOALS:
+${goalLines||'  (none)'}`.trim();
+}
+
+const AGENT_DEFS = [
+  { id:'portfolio', name:'Portfolio Analyst', icon:'📊', color:'#3182ce', bg:'#1a3a5c',
+    systemPrompt: ctx=>`You are an expert portfolio analyst. Analyze the user's investment portfolio for diversification, concentration risk, allocation vs age-appropriate targets, and specific actionable recommendations.\n\n${ctx}`,
+    prompt:'Analyze my portfolio: diversification, concentration risk, allocation quality vs my age and risk tolerance. Give me 3 specific action items.' },
+  { id:'debt', name:'Debt Strategist', icon:'💳', color:'#fc8181', bg:'#4a1c1c',
+    systemPrompt: ctx=>`You are a debt elimination expert. Analyze the user's debt situation and provide specific payoff strategies.\n\n${ctx}`,
+    prompt:'Analyze my debt: recommend avalanche vs snowball, flag any refinancing opportunities, and calculate how paying an extra $200/month would change my payoff timeline.' },
+  { id:'tax', name:'Tax Efficiency', icon:'🏛️', color:'#68d391', bg:'#1c4532',
+    systemPrompt: ctx=>`You are a tax efficiency expert for personal finance. Analyze the user's holdings and accounts for tax optimization opportunities.\n\n${ctx}`,
+    prompt:'Analyze my tax situation: any tax-loss harvesting opportunities, asset location improvements, Roth conversion candidates, and estimated annual tax drag.' },
+  { id:'retirement', name:'Retirement Modeler', icon:'🎯', color:'#b794f4', bg:'#322a5c',
+    systemPrompt: ctx=>`You are a retirement planning expert. Use the 4% rule and Monte Carlo thinking to assess the user's retirement readiness.\n\n${ctx}`,
+    prompt:"Model my retirement: am I on track? What does my FIRE number look like? If I retire at 65, what monthly income can I expect at median market returns? What's my biggest gap?" },
+  { id:'risk', name:'Risk Analyst', icon:'⚠️', color:'#f6ad55', bg:'#4a3b1c',
+    systemPrompt: ctx=>`You are a risk analyst specializing in personal portfolio risk assessment.\n\n${ctx}`,
+    prompt:'Analyze my portfolio risk: concentration risk by position and sector, what happens to my net worth in a 30% market drawdown, and how does my risk profile match my stated risk tolerance?' },
+  { id:'macro', name:'Market & Macro', icon:'🌍', color:'#4fd1c5', bg:'#1a3d3a',
+    systemPrompt: ctx=>`You are a macroeconomic analyst. Analyze current macro conditions and their specific impact on this user's portfolio.\n\n${ctx}`,
+    prompt:'Given current macro conditions (rates, inflation, market cycle), what is the specific impact on my portfolio? Which of my holdings are most exposed? What tactical adjustments should I consider?' },
+];
+
+function AgentsTab({ state, dispatch }) {
+  const { apiKeys, agentResults, agentStatus, agentChat } = state;
+  // ref needed to avoid stale closures in async runAll loop
+  const agentResultsRef = useRef(agentResults);
+  useEffect(() => { agentResultsRef.current = agentResults; }, [agentResults]);
+  const agentChatRef = useRef(agentChat);
+  useEffect(() => { agentChatRef.current = agentChat; }, [agentChat]);
+
+  const [expanded, setExpanded]   = useState(() => {
+    // Auto-expand any agent that already has a saved result
+    const init = {};
+    AGENT_DEFS.forEach(d => { if (agentResults[d.id]) init[d.id] = true; });
+    if (agentResults.synthesis) init.synthesis = true;
+    return init;
+  });
+  const [runningAll, setRunningAll] = useState(false);
+  const [chatInput, setChatInput]     = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatRef = useRef(null);
+
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [agentChat]);
+
+  const ctx = useMemo(() => buildContext(state), [state]);
+
+  const setAgentResult = (id, result) => dispatch({ type:'SET_AGENT_RESULT', id, result });
+  const setAgentStatus = (id, status) => dispatch({ type:'SET_AGENT_STATUS', id, status });
+
+  const runAgent = useCallback(async (def) => {
+    if (!apiKeys.anthropic) return;
+    setAgentStatus(def.id, 'running');
+    setExpanded(e=>({...e,[def.id]:true}));
+    let attempt=0, result=null;
+    while (attempt<3 && result===null) {
+      if (attempt>0) await sleep(attempt*5000);
+      try {
+        result = await callAPI([{role:'user',content:def.prompt}], def.systemPrompt(ctx), apiKeys.anthropic, 1400);
+      } catch(e) {
+        attempt++;
+        if (attempt>=3) { setAgentStatus(def.id,'error'); setAgentResult(def.id,`Error: ${e.message}`); return; }
+      }
+    }
+    agentResultsRef.current = {...agentResultsRef.current,[def.id]:result};
+    setAgentResult(def.id, result);
+    setAgentStatus(def.id, 'done');
+    apiPost('/api/agent-cache', { results: agentResultsRef.current, chat: [] }).catch(()=>{});
+  }, [apiKeys.anthropic, ctx]);
+
+  const runAll = useCallback(async () => {
+    if (!apiKeys.anthropic||runningAll) return;
+    setRunningAll(true);
+    agentResultsRef.current = {};
+    dispatch({ type:'CLEAR_AGENTS' });
+    for (let i=0; i<AGENT_DEFS.length; i++) {
+      await runAgent(AGENT_DEFS[i]);
+      if (i<AGENT_DEFS.length-1) await sleep(1500);
+    }
+    const agentSummaries = AGENT_DEFS.map(d=>`## ${d.name}\n${agentResultsRef.current[d.id]||'(not run)'}`).join('\n\n');
+    setAgentStatus('synthesis', 'running');
+    setExpanded(e=>({...e,synthesis:true}));
+    let attempt=0, synthResult=null;
+    while (attempt<3&&synthResult===null) {
+      if (attempt>0) await sleep(attempt*5000);
+      try {
+        synthResult = await callAPI(
+          [{role:'user',content:`Based on all specialist analyses below, provide a comprehensive financial health scorecard (A-F grades for each area) and exactly 3 specific, high-priority actions to take THIS MONTH.\n\n${agentSummaries}`}],
+          `You are a Chief Investment Officer synthesizing specialist reports for ${state.profile.name}. Be direct, specific, and actionable. ${ctx}`,
+          apiKeys.anthropic, 1600
+        );
+      } catch(e) { attempt++; if (attempt>=3) { setAgentStatus('synthesis','error'); setRunningAll(false); return; } }
+    }
+    setAgentResult('synthesis', synthResult);
+    setAgentStatus('synthesis', 'done');
+    setRunningAll(false);
+    // Persist results so they survive page refresh
+    const finalResults = {...agentResultsRef.current, synthesis: synthResult};
+    apiPost('/api/agent-cache', { results: finalResults, chat: agentChatRef.current }).catch(()=>{});
+  }, [apiKeys.anthropic, runningAll, runAgent, state.profile.name, ctx, state.agentChat]);
+
+  const runSynthesisOnly = useCallback(async () => {
+    if (!apiKeys.anthropic) return;
+    const agentSummaries = AGENT_DEFS.map(d=>`## ${d.name}\n${agentResults[d.id]||'(not run)'}`).join('\n\n');
+    setAgentStatus('synthesis', 'running');
+    setExpanded(e=>({...e,synthesis:true}));
+    try {
+      const r = await callAPI(
+        [{role:'user',content:`Synthesize these specialist reports into a financial health scorecard and 3 immediate action items.\n\n${agentSummaries}`}],
+        `You are a Chief Investment Officer. ${ctx}`, apiKeys.anthropic, 1600
+      );
+      setAgentResult('synthesis', r);
+      setAgentStatus('synthesis', 'done');
+    } catch(e) { setAgentStatus('synthesis','error'); }
+  }, [apiKeys.anthropic, agentResults, ctx]);
+
+  const sendChat = useCallback(async (msg) => {
+    if (!msg.trim()||!apiKeys.anthropic||chatLoading) return;
+    const history = [...agentChat, {role:'user',content:msg}];
+    dispatch({ type:'SET_AGENT_CHAT', chat:history });
+    setChatInput(''); setChatLoading(true);
+    try {
+      const reply = await callAPI(history, `You are FinPal, a personal financial advisor. Be specific, data-driven, and actionable. Always reference their actual numbers.\n\n${ctx}`, apiKeys.anthropic, 1000);
+      const updatedChat = [...history,{role:'assistant',content:reply}];
+      dispatch({ type:'SET_AGENT_CHAT', chat:updatedChat });
+      apiPost('/api/agent-cache', { results: agentResultsRef.current, chat: updatedChat }).catch(()=>{});
+    } catch(e) { dispatch({ type:'SET_AGENT_CHAT', chat:[...history,{role:'assistant',content:`Error: ${e.message}`}] }); }
+    setChatLoading(false);
+  }, [apiKeys.anthropic, agentChat, agentResults, chatLoading, ctx]);
+
+  const CHIPS = ['Am I on track for retirement?','Which debt should I pay first?','What should I invest $500/month in?','How can I reduce my taxes?','What is my biggest financial risk?'];
+
+  const statusBadge = id => {
+    const s = agentStatus[id];
+    if (s==='running') return <span className="agent-running" style={{fontSize:12,color:'#63b3ed'}}>● Running…</span>;
+    if (s==='done')    return <span className="badge b-green">✓ Done</span>;
+    if (s==='error')   return <span className="badge b-red">✗ Error</span>;
+    return <span className="badge" style={{background:'#2d3748',color:'#718096'}}>Idle</span>;
+  };
+
+  if (!apiKeys.anthropic) {
+    return (
+      <div className="card tc" style={{padding:40}}>
+        <div style={{fontSize:32,marginBottom:12}}>🤖</div>
+        <div className="bold" style={{fontSize:16,marginBottom:8}}>Anthropic API Key Required</div>
+        <div className="gray" style={{fontSize:13}}>Add your Anthropic API key in Settings to use AI Agents and the personal advisor chat.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <div className="bold" style={{fontSize:15}}>AI Financial Advisory Team</div>
+          <div style={{fontSize:12,color:'#718096'}}>6 specialist agents analyze your complete financial picture</div>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary btn-sm" onClick={runSynthesisOnly} disabled={runningAll}>Synthesize Only</button>
+          <button className="btn btn-primary" onClick={runAll} disabled={runningAll}>
+            {runningAll?<span className="flex items-center gap-2"><span className="spinner" />Running all agents…</span>:'▶ Run All Agents'}
+          </button>
+        </div>
+      </div>
+
+      {AGENT_DEFS.map(def => (
+        <div key={def.id} className="agent-card">
+          <div className="agent-hdr" onClick={()=>setExpanded(e=>({...e,[def.id]:!e[def.id]}))}>
+            <div className="agent-icon" style={{background:def.bg}}><span>{def.icon}</span></div>
+            <div className="flex-1">
+              <div className="bold" style={{fontSize:13}}>{def.name}</div>
+              <div style={{fontSize:11,color:'#718096'}}>{def.prompt.slice(0,80)}…</div>
+            </div>
+            {statusBadge(def.id)}
+            <button className="btn btn-secondary btn-sm" style={{marginLeft:8}}
+              onClick={e=>{e.stopPropagation();runAgent(def);}}
+              disabled={runningAll||agentStatus[def.id]==='running'}>
+              {agentStatus[def.id]==='running'?'…':'Run'}
+            </button>
+            <span style={{color:'#718096',marginLeft:8,fontSize:12}}>{expanded[def.id]?'▲':'▼'}</span>
+          </div>
+          {expanded[def.id]&&agentResults[def.id] && (
+            <div className="agent-body"><RenderedText text={agentResults[def.id]} /></div>
+          )}
+        </div>
+      ))}
+
+      <div className="agent-card" style={{border:'1px solid #3182ce'}}>
+        <div className="agent-hdr" onClick={()=>setExpanded(e=>({...e,synthesis:!e.synthesis}))}>
+          <div className="agent-icon" style={{background:'#1a3a5c'}}>🎖️</div>
+          <div className="flex-1">
+            <div className="bold" style={{fontSize:13,color:'#63b3ed'}}>CIO Synthesis — Financial Health Report</div>
+            <div style={{fontSize:11,color:'#718096'}}>Scorecard + 3 action items based on all specialist analyses</div>
+          </div>
+          {statusBadge('synthesis')}
+          <span style={{color:'#718096',marginLeft:8,fontSize:12}}>{expanded.synthesis?'▲':'▼'}</span>
+        </div>
+        {expanded.synthesis&&agentResults.synthesis && (
+          <div className="agent-body"><RenderedText text={agentResults.synthesis} /></div>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <div className="section-title">Personal Advisor Chat</div>
+        <div className="chat-wrap">
+          <div className="chat-msgs" ref={chatRef}>
+            {agentChat.length===0 && (
+              <div className="gray tc" style={{fontSize:12,marginTop:20}}>Ask your personal advisor anything about your finances</div>
+            )}
+            {agentChat.map((m,i) => (
+              <div key={i} className={`chat-msg ${m.role==='user'?'user':'ai'}`}>
+                {m.role==='assistant'?<RenderedText text={m.content}/>:m.content}
+              </div>
+            ))}
+            {chatLoading && <div className="chat-msg ai gray" style={{fontSize:12}}>Thinking…</div>}
+          </div>
+          <div style={{padding:'6px 10px',borderTop:'1px solid #2d3748',display:'flex',flexWrap:'wrap',gap:4}}>
+            {CHIPS.map(chip=><span key={chip} className="chip" onClick={()=>sendChat(chip)}>{chip}</span>)}
+          </div>
+          <div className="chat-input">
+            <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&sendChat(chatInput)}
+              placeholder="Ask about your finances… (Enter to send)" disabled={chatLoading} />
+            <button className="btn btn-primary btn-sm" onClick={()=>sendChat(chatInput)} disabled={chatLoading||!chatInput.trim()}>Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// SETTINGS MODAL + MAIN APP
+// =============================================================================
+function SettingsModal({ state, dispatch, onLogout, onClose }) {
+  const [keys, setKeys] = useState({...state.apiKeys});
+  const [prof, setProf] = useState({...state.profile});
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await Promise.all([apiPut('/api/keys', keys), apiPut('/api/profile', prof)]);
+      dispatch({ type:'SET_KEYS', keys });
+      dispatch({ type:'SET_SETUP_COMPLETE', profile:prof });
+      onClose();
+    } catch(e) { setSaving(false); }
+  };
+
+  const logout = async () => {
+    try { await apiPost('/api/auth/logout', {}); } catch(e) {}
+    onLogout();
+  };
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div className="card" style={{width:500,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>Settings</div>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{fontSize:11,fontWeight:600,color:'#718096',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>API Keys</div>
+        <p style={{fontSize:11,color:'#4a5568',marginBottom:14,lineHeight:1.6}}>Keys are stored in this server's database and sent directly to each provider from your browser — never proxied.</p>
+        {[['anthropic','Anthropic API Key'],['alphaVantage','Alpha Vantage Key'],['finnhub','Finnhub Key'],['fred','FRED Key']].map(([k,label])=>(
+          <div key={k} className="form-group">
+            <label>{label}</label>
+            <input type="password" value={keys[k]||''} onChange={e=>setKeys(ks=>({...ks,[k]:e.target.value}))} autoComplete="off" />
+          </div>
+        ))}
+
+        <hr className="divider" />
+        <div style={{fontSize:11,fontWeight:600,color:'#718096',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>Profile</div>
+        <div className="grid g2 gap-4">
+          <div className="form-group"><label>Name</label>
+            <input value={prof.name||''} onChange={e=>setProf(p=>({...p,name:e.target.value}))} /></div>
+          <div className="form-group"><label>Age</label>
+            <input type="number" min="18" max="90" value={prof.age||30} onChange={e=>setProf(p=>({...p,age:+e.target.value}))} /></div>
+          <div className="form-group"><label>Annual Income ($)</label>
+            <input type="number" min="0" value={prof.annualIncome||0} onChange={e=>setProf(p=>({...p,annualIncome:+e.target.value}))} /></div>
+          <div className="form-group"><label>Filing Status</label>
+            <select value={prof.filingStatus||'single'} onChange={e=>setProf(p=>({...p,filingStatus:e.target.value}))}>
+              <option value="single">Single</option>
+              <option value="married_jointly">Married Filing Jointly</option>
+              <option value="married_separately">Married Filing Separately</option>
+              <option value="head_of_household">Head of Household</option>
+            </select></div>
+        </div>
+        {(() => {
+          const rate = prof.marginalTaxRateOverride != null
+            ? prof.marginalTaxRateOverride
+            : calcMarginalRate(prof.annualIncome, prof.filingStatus);
+          return (
+            <div style={{background:'#0f1117',border:'1px solid #2d3748',borderRadius:6,padding:'8px 12px',marginTop:8,fontSize:12}}>
+              <span style={{color:'#a0aec0'}}>Federal marginal rate: </span>
+              <span className="bold blue">{rate}%</span>
+              <span style={{color:'#718096'}}> · </span>
+              <label style={{cursor:'pointer',color:'#63b3ed'}}>
+                <input type="checkbox" style={{marginRight:4}} checked={prof.marginalTaxRateOverride!=null}
+                  onChange={e=>setProf(p=>({...p,marginalTaxRateOverride:e.target.checked?rate:null}))} />
+                Override
+              </label>
+              {prof.marginalTaxRateOverride!=null && (
+                <input type="number" min="0" max="60" step="1" value={prof.marginalTaxRateOverride}
+                  onChange={e=>setProf(p=>({...p,marginalTaxRateOverride:+e.target.value}))}
+                  style={{width:55,marginLeft:8}} />
+              )}
+            </div>
+          );
+        })()}
+
+        <div className="flex justify-between" style={{marginTop:20}}>
+          <button className="btn btn-danger btn-sm" onClick={logout}>Log Out</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':'Save Changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [authUser, setAuthUser]     = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [state, dispatch]           = useReducer(reducer, BLANK);
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    apiGet('/api/auth/me')
+      .then(d => {
+        if (d.user) { setAuthUser(d.user); return apiGet('/api/me/data'); }
+        return null;
+      })
+      .then(data => { if (data) dispatch({ type:'HYDRATE', payload:data }); setAuthChecked(true); })
+      .catch(() => setAuthChecked(true));
+  }, []);
+
+  const handleLogin = async (user) => {
+    setAuthUser(user);
+    try { const data = await apiGet('/api/me/data'); dispatch({ type:'HYDRATE', payload:data }); } catch(e) {}
+  };
+
+  const handleLogout = () => {
+    setAuthUser(null);
+    dispatch({ type:'HYDRATE', payload:{ profile:{}, assets:[], liabilities:[], cash:[], goals:[], apiKeys:BLANK.apiKeys, snapshots:[] }});
+  };
+
+  const handleSetupComplete = (data) => {
+    dispatch({ type:'HYDRATE', payload:{ ...data, profile:{ ...data.profile, setupComplete:true } }});
+  };
+
+  if (!authChecked) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#0f1117'}}>
+      <div className="spinner" style={{width:32,height:32,borderWidth:3}} />
+    </div>
+  );
+
+  if (!authUser) return <LoginScreen onLogin={handleLogin} />;
+  if (!state.setupComplete) return <SetupWizard onComplete={handleSetupComplete} />;
+
+  const totalPortfolio = state.assets.reduce((s,a) => s+(state.livePrices[a.ticker]?.price||a.costBasis)*a.shares, 0);
+  const totalCash  = state.cash.reduce((s,c)=>s+c.amount, 0);
+  const totalDebt  = state.liabilities.reduce((s,l)=>s+l.balance, 0);
+  const netWorth   = totalPortfolio + totalCash - totalDebt;
+
+  const tabContent = () => {
+    switch (state.activeTab) {
+      case 'Net Worth':  return <NetWorthTab state={state} dispatch={dispatch} />;
+      case 'Portfolio':  return <PortfolioTab state={state} dispatch={dispatch} />;
+      case 'Debt':       return <DebtTab state={state} dispatch={dispatch} />;
+      case 'Goals':      return <GoalsTab state={state} dispatch={dispatch} />;
+      case 'Models':     return <ModelsTab state={state} />;
+      case 'Market':     return <MarketTab state={state} dispatch={dispatch} />;
+      case 'AI Agents':  return <AgentsTab state={state} dispatch={dispatch} />;
+      default:           return null;
+    }
+  };
+
+  return (
+    <div className="app">
+      <div className="header">
+        <div style={{fontSize:20,marginRight:4}}>💰</div>
+        <h1>FinPal</h1>
+        {state.profile.name && <span style={{fontSize:13,color:'#718096'}}>— {state.profile.name}</span>}
+        <div className="header-stats">
+          <div className="header-stat"><div className="lbl">Net Worth</div><div className="val" style={{color:netWorth>=0?'#68d391':'#fc8181'}}>{fmt(netWorth)}</div></div>
+          <div className="header-stat"><div className="lbl">Portfolio</div><div className="val">{fmt(totalPortfolio)}</div></div>
+          <div className="header-stat"><div className="lbl">Debt</div><div className="val red">{fmt(totalDebt)}</div></div>
+        </div>
+        <button className="btn btn-secondary btn-sm" style={{marginLeft:8}} onClick={()=>setShowSettings(true)}>⚙ Settings</button>
+      </div>
+      <div className="tabs">
+        {TABS.map(t=>(
+          <div key={t} className={`tab ${state.activeTab===t?'active':''}`} onClick={()=>dispatch({type:'SET_TAB',tab:t})}>{t}</div>
+        ))}
+      </div>
+      <div className="content">{tabContent()}</div>
+      {showSettings && <SettingsModal state={state} dispatch={dispatch} onLogout={handleLogout} onClose={()=>setShowSettings(false)} />}
+    </div>
+  );
+}
+
+try {
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+} catch(e) {
+  console.error('FinPal render error:', e);
+  document.getElementById('root').innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#fc8181;background:#0f1117;flex-direction:column;gap:12px">' +
+    '<div style="font-size:20px">⚠ App failed to start: ' + e.message + '</div>' +
+    '<div style="color:#718096;font-size:11px">Open browser console (F12) for details.</div></div>';
+}
+</script>
+</body>
+</html>
