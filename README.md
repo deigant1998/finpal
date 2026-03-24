@@ -78,3 +78,25 @@ The app runs anywhere Node.js is available. For platforms with persistent storag
 ```bash
 DATA_DIR=/data SESSION_SECRET=<random> npm start
 ```
+
+## Screenshots
+
+<img width="1437" height="766" alt="image" src="https://github.com/user-attachments/assets/d17d80ee-d76a-4cd5-9fc8-b0d63556a0e1" />
+
+<img width="1440" height="735" alt="image" src="https://github.com/user-attachments/assets/fd8322d2-421d-433e-a777-5dda179cd2c6" />
+
+<img width="1439" height="766" alt="image" src="https://github.com/user-attachments/assets/f22c99af-7efa-4b89-9b94-24b9d9292544" />
+
+<img width="1440" height="761" alt="image" src="https://github.com/user-attachments/assets/84ca8576-109f-41b2-a015-c39d688e8731" />
+
+<img width="1440" height="707" alt="image" src="https://github.com/user-attachments/assets/2b991117-fe64-45fc-957d-1fdab177aa0e" />
+
+<img width="1440" height="756" alt="image" src="https://github.com/user-attachments/assets/27af76e3-8c06-4355-adc6-135bbbafc82b" />
+
+<img width="1440" height="710" alt="image" src="https://github.com/user-attachments/assets/cdbd1a39-1f7e-4357-b26b-0d6e1a29ffac" />
+
+
+
+
+
+
