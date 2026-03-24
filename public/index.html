@@ -2101,23 +2101,23 @@ ${goalLines||'  (none)'}`.trim();
 
 const AGENT_DEFS = [
   { id:'portfolio', name:'Portfolio Analyst', icon:'📊', color:'#3182ce', bg:'#1a3a5c',
-    systemPrompt: ctx=>`You are an expert portfolio analyst. Analyze the user's investment portfolio for diversification, concentration risk, allocation vs age-appropriate targets, and specific actionable recommendations.\n\n${ctx}`,
-    prompt:'Analyze my portfolio: diversification, concentration risk, allocation quality vs my age and risk tolerance. Give me 3 specific action items.' },
+    systemPrompt: ctx=>`You are an expert portfolio analyst. Be concise — use bullet points, no preamble.\n\n${ctx}`,
+    prompt:'In bullet points: (1) diversification assessment, (2) top concentration risk, (3) allocation vs my age/risk tolerance, (4) one specific action to improve. Be brief.' },
   { id:'debt', name:'Debt Strategist', icon:'💳', color:'#fc8181', bg:'#4a1c1c',
-    systemPrompt: ctx=>`You are a debt elimination expert. Analyze the user's debt situation and provide specific payoff strategies.\n\n${ctx}`,
-    prompt:'Analyze my debt: recommend avalanche vs snowball, flag any refinancing opportunities, and calculate how paying an extra $200/month would change my payoff timeline.' },
+    systemPrompt: ctx=>`You are a debt elimination expert. Be concise — use bullet points, no preamble.\n\n${ctx}`,
+    prompt:'In bullet points: (1) avalanche vs snowball recommendation with reason, (2) any refinancing opportunity, (3) impact of $200/mo extra payment on payoff date. Use actual numbers.' },
   { id:'tax', name:'Tax Efficiency', icon:'🏛️', color:'#68d391', bg:'#1c4532',
-    systemPrompt: ctx=>`You are a tax efficiency expert for personal finance. Analyze the user's holdings and accounts for tax optimization opportunities.\n\n${ctx}`,
-    prompt:'Analyze my tax situation: any tax-loss harvesting opportunities, asset location improvements, Roth conversion candidates, and estimated annual tax drag.' },
+    systemPrompt: ctx=>`You are a tax efficiency expert. Be concise — use bullet points, no preamble.\n\n${ctx}`,
+    prompt:'In bullet points: (1) any tax-loss harvesting opportunities, (2) asset location improvements (what should be in tax-advantaged vs taxable), (3) Roth conversion candidate if applicable. Be brief.' },
   { id:'retirement', name:'Retirement Modeler', icon:'🎯', color:'#b794f4', bg:'#322a5c',
-    systemPrompt: ctx=>`You are a retirement planning expert. Use the 4% rule and Monte Carlo thinking to assess the user's retirement readiness.\n\n${ctx}`,
-    prompt:"Model my retirement: am I on track? What does my FIRE number look like? If I retire at 65, what monthly income can I expect at median market returns? What's my biggest gap?" },
+    systemPrompt: ctx=>`You are a retirement planning expert. Be concise — use bullet points, no preamble.\n\n${ctx}`,
+    prompt:'In bullet points: (1) on-track status for retirement at 65, (2) FIRE number and current gap, (3) projected monthly income at retirement using 4% rule, (4) single biggest gap. Use actual numbers.' },
   { id:'risk', name:'Risk Analyst', icon:'⚠️', color:'#f6ad55', bg:'#4a3b1c',
-    systemPrompt: ctx=>`You are a risk analyst specializing in personal portfolio risk assessment.\n\n${ctx}`,
-    prompt:'Analyze my portfolio risk: concentration risk by position and sector, what happens to my net worth in a 30% market drawdown, and how does my risk profile match my stated risk tolerance?' },
+    systemPrompt: ctx=>`You are a risk analyst. Be concise — use bullet points, no preamble.\n\n${ctx}`,
+    prompt:'In bullet points: (1) top concentration risk by position, (2) estimated portfolio impact in a 30% market drawdown, (3) does my risk profile match my stated tolerance? Be brief.' },
   { id:'macro', name:'Market & Macro', icon:'🌍', color:'#4fd1c5', bg:'#1a3d3a',
-    systemPrompt: ctx=>`You are a macroeconomic analyst. Analyze current macro conditions and their specific impact on this user's portfolio.\n\n${ctx}`,
-    prompt:'Given current macro conditions (rates, inflation, market cycle), what is the specific impact on my portfolio? Which of my holdings are most exposed? What tactical adjustments should I consider?' },
+    systemPrompt: ctx=>`You are a macroeconomic analyst. Be concise — use bullet points, no preamble.\n\n${ctx}`,
+    prompt:'In bullet points: (1) current macro headwinds/tailwinds most relevant to my portfolio, (2) my most exposed holdings, (3) one tactical adjustment to consider. Be brief.' },
 ];
 
 function AgentsTab({ state, dispatch }) {
@@ -2157,7 +2157,7 @@ function AgentsTab({ state, dispatch }) {
     while (attempt<3 && result===null) {
       if (attempt>0) await sleep(attempt*5000);
       try {
-        result = await callAPI([{role:'user',content:def.prompt}], def.systemPrompt(ctx), apiKeys.anthropic, 1400);
+        result = await callAPI([{role:'user',content:def.prompt}], def.systemPrompt(ctx), apiKeys.anthropic, 600);
       } catch(e) {
         attempt++;
         if (attempt>=3) { setAgentStatus(def.id,'error'); setAgentResult(def.id,`Error: ${e.message}`); return; }
@@ -2186,9 +2186,9 @@ function AgentsTab({ state, dispatch }) {
       if (attempt>0) await sleep(attempt*5000);
       try {
         synthResult = await callAPI(
-          [{role:'user',content:`Based on all specialist analyses below, provide a comprehensive financial health scorecard (A-F grades for each area) and exactly 3 specific, high-priority actions to take THIS MONTH. Format grades EXACTLY as: \`Portfolio: B+\`, \`Debt: C\`, \`Tax: A-\`, \`Retirement: B\`, \`Risk: C+\`, \`Macro: B\` (use these exact category names).\n\n${agentSummaries}`}],
-          `You are a Chief Investment Officer synthesizing specialist reports for ${state.profile.name}. Be direct, specific, and actionable. ${ctx}`,
-          apiKeys.anthropic, 1600
+          [{role:'user',content:`Based on the specialist analyses below, output ONLY the following — nothing else:\n\nScores:\nPortfolio: [A-F grade]\nDebt: [A-F grade]\nTax: [A-F grade]\nRetirement: [A-F grade]\nRisk: [A-F grade]\nMacro: [A-F grade]\n\nTop 3 Actions This Month:\n1. [specific action with dollar amounts where relevant]\n2. [specific action]\n3. [specific action]\n\nSpecialist reports:\n${agentSummaries}`}],
+          `You are a Chief Investment Officer for ${state.profile.name}. Output only the scorecard format requested. Be specific and use actual numbers from the reports.`,
+          apiKeys.anthropic, 400
         );
       } catch(e) { attempt++; if (attempt>=3) { setAgentStatus('synthesis','error'); setRunningAll(false); return; } }
     }
@@ -2209,8 +2209,8 @@ function AgentsTab({ state, dispatch }) {
     setExpanded(e=>({...e,synthesis:true}));
     try {
       const r = await callAPI(
-        [{role:'user',content:`Synthesize these specialist reports into a financial health scorecard and 3 immediate action items.\n\n${agentSummaries}`}],
-        `You are a Chief Investment Officer. ${ctx}`, apiKeys.anthropic, 1600
+        [{role:'user',content:`Based on the specialist analyses below, output ONLY:\n\nScores:\nPortfolio: [A-F grade]\nDebt: [A-F grade]\nTax: [A-F grade]\nRetirement: [A-F grade]\nRisk: [A-F grade]\nMacro: [A-F grade]\n\nTop 3 Actions This Month:\n1. [specific action]\n2. [specific action]\n3. [specific action]\n\nSpecialist reports:\n${agentSummaries}`}],
+        `You are a Chief Investment Officer. Output only the scorecard format requested.`, apiKeys.anthropic, 400
       );
       setAgentResult('synthesis', r);
       setAgentStatus('synthesis', 'done');
