@@ -163,6 +163,44 @@ const monthsBetween = (a, b) => {
   return Math.max(0, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth()));
 };
 
+// ─── Parse helpers for AI synthesis output ───────────────────────────────────
+function parseSynthesisGrades(text) {
+  if (!text) return {};
+  const CATEGORY_MAP = {
+    portfolio:  ['portfolio','investment','allocation'],
+    debt:       ['debt','liability','credit'],
+    tax:        ['tax','efficiency'],
+    retirement: ['retirement','retire','fire'],
+    risk:       ['risk','drawdown','volatility'],
+    macro:      ['macro','market','economic'],
+  };
+  const grades = {};
+  const pat = /([A-Za-z][A-Za-z\s&\/]+):\s*([A-F][+-]?)\b/g;
+  let m;
+  while ((m = pat.exec(text)) !== null) {
+    const label = m[1].toLowerCase().trim();
+    for (const [cat, kws] of Object.entries(CATEGORY_MAP)) {
+      if (!grades[cat] && kws.some(k => label.includes(k))) grades[cat] = m[2];
+    }
+  }
+  return grades;
+}
+function gradeToScore(g) {
+  const S = {'A+':98,'A':95,'A-':92,'B+':88,'B':82,'B-':78,'C+':73,'C':68,'C-':63,'D+':57,'D':50,'D-':43,'F':30};
+  return S[g] ?? 65;
+}
+function overallScore(grades) {
+  const vals = Object.values(grades).map(gradeToScore);
+  return vals.length ? Math.round(vals.reduce((a,b)=>a+b)/vals.length) : null;
+}
+function parseSynthesisActions(text) {
+  if (!text) return [];
+  const items = text.match(/(?:^|\n)\s*(?:\*\*)?[1-3][\.\)]\s*(?:\*\*)?\s*(.+?)(?=\n\s*(?:\*\*)?[1-3][\.\)]|\n\n|$)/gs);
+  if (items && items.length >= 2)
+    return items.slice(0,3).map(m => m.replace(/^\s*(?:\*\*)?[1-3][\.\)]\s*(?:\*\*)?\s*/,'').replace(/\*\*/g,'').trim()).filter(Boolean);
+  return [];
+}
+
 // ─── Backend API helpers ─────────────────────────────────────────────────────
 // Simple fetch wrappers — all calls go to the same Express server that serves this page.
 
@@ -298,7 +336,7 @@ const BLANK = {
   apiKeys: { anthropic:'', alphaVantage:'', finnhub:'', fred:'' },
   livePrices:{}, pricesFetching:false, pricesFetched:false,
   news:{}, macro:{}, newsFetchedAt:null, macroFetchedAt:null,
-  agentResults:{}, agentStatus:{}, agentChat:[],
+  agentResults:{}, agentStatus:{}, agentChat:[], agentUpdatedAt: null,
 };
 
 function reducer(state, action) {
@@ -334,6 +372,7 @@ function reducer(state, action) {
         macroFetchedAt:macroFresh ? p.marketCache.macro.fetchedAt  : null,
         agentResults: p.agentCache?.results || {},
         agentChat:    p.agentCache?.chat    || [],
+        agentUpdatedAt: p.agentCache?.updatedAt || null,
       };
     }
     case 'SET_TAB':           return {...state, activeTab:action.tab};
@@ -363,6 +402,7 @@ function reducer(state, action) {
     case 'SET_AGENT_STATUS':  return {...state, agentStatus:{...state.agentStatus,[action.id]:action.status}};
     case 'CLEAR_AGENTS':      return {...state, agentResults:{}, agentStatus:{}};
     case 'SET_AGENT_CHAT':    return {...state, agentChat:action.chat};
+    case 'SET_AGENT_UPDATED_AT': return {...state, agentUpdatedAt: action.updatedAt};
     default: return state;
   }
 }
@@ -481,7 +521,7 @@ function SetupWizard({ onComplete }) {
           <input value={profile.name} onChange={e=>pf('name',e.target.value)} placeholder="Alex Smith" /></div>
         <div className="form-group"><label>Age</label>
           <input type="number" min="18" max="90" value={profile.age} onChange={e=>pf('age',+e.target.value)} /></div>
-        <div className="form-group"><label>Annual Income (pre-tax)</label>
+        <div className="form-group"><label title="Used to estimate your tax bracket, goal tracking, and retirement projections. Never shared.">Annual Income (pre-tax)</label>
           <input type="number" value={profile.annualIncome} onChange={e=>pf('annualIncome',+e.target.value)} /></div>
         <div className="form-group"><label>Filing Status</label>
           <select value={profile.filingStatus||'single'} onChange={e=>pf('filingStatus',e.target.value)}>
@@ -623,6 +663,11 @@ function SetupWizard({ onComplete }) {
         {steps[step]()}
         <div className="flex justify-between mt-4" style={{marginTop:24}}>
           <button className="btn btn-secondary" onClick={()=>setStep(s=>Math.max(0,s-1))} disabled={step===0||saving}>Back</button>
+          {step > 0 && step < STEPS.length - 1 && (
+            <button type="button" className="btn btn-secondary" style={{color:'#4a5568',fontSize:12}} onClick={()=>setStep(s=>s+1)}>
+              Skip for now
+            </button>
+          )}
           {step<STEPS.length-1
             ? <button className="btn btn-primary" onClick={()=>setStep(s=>s+1)} disabled={!canNext()}>Next →</button>
             : <button className="btn btn-success btn-lg" onClick={finish} disabled={saving}>
@@ -636,10 +681,98 @@ function SetupWizard({ onComplete }) {
 }
 
 // =============================================================================
+// HEALTH SCORE CARD
+// =============================================================================
+function HealthScoreCard({ agentResults, agentStatus, agentUpdatedAt, onRunAgents }) {
+  const synthesis = agentResults?.synthesis;
+  const grades = React.useMemo(() => parseSynthesisGrades(synthesis), [synthesis]);
+  const actions = React.useMemo(() => parseSynthesisActions(synthesis), [synthesis]);
+  const score = React.useMemo(() => overallScore(grades), [grades]);
+  const hasRun = !!synthesis;
+  const isRunning = agentStatus?.synthesis === 'running';
+
+  const scoreColor = !score ? '#718096' : score >= 80 ? '#68d391' : score >= 60 ? '#f6ad55' : '#fc8181';
+  const GRADE_COLORS = { A:'#68d391', B:'#63b3ed', C:'#f6ad55', D:'#fc8181', F:'#fc8181' };
+  const gradeColor = (g) => g ? (GRADE_COLORS[g[0]] || '#718096') : '#4a5568';
+
+  const CATS = [
+    {key:'portfolio',label:'Portfolio'},{key:'debt',label:'Debt'},{key:'tax',label:'Tax'},
+    {key:'retirement',label:'Retirement'},{key:'risk',label:'Risk'},{key:'macro',label:'Macro'},
+  ];
+
+  const daysSince = agentUpdatedAt
+    ? Math.floor((Date.now() - new Date(agentUpdatedAt).getTime()) / 86400000)
+    : null;
+
+  const scoreLabel = !score ? '—' : score >= 93 ? 'A' : score >= 85 ? 'B+' : score >= 80 ? 'B' : score >= 73 ? 'C+' : score >= 65 ? 'C' : score >= 55 ? 'D' : 'F';
+
+  if (!hasRun && !isRunning) {
+    return (
+      <div className="card mb-6" style={{border:'1px solid #3182ce',background:'linear-gradient(135deg,#1a1f2e 60%,#1a2a3a)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
+          <div style={{fontSize:40}}>🎖️</div>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Get your Financial Health Score</div>
+            <div style={{color:'#718096',fontSize:13,lineHeight:1.6}}>6 AI specialists analyze your portfolio, debt, taxes, and retirement — then give you A-F grades and 3 specific actions for this month.</div>
+          </div>
+          <button className="btn btn-primary" style={{padding:'10px 20px',fontSize:14,whiteSpace:'nowrap'}} onClick={onRunAgents}>Run Health Check →</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isRunning) {
+    return (
+      <div className="card mb-6" style={{border:'1px solid #3182ce',textAlign:'center',padding:24}}>
+        <div style={{color:'#63b3ed',fontSize:14}}>● Running financial health check…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card mb-6" style={{border:'1px solid #2d3748'}}>
+      <div style={{display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',marginBottom:actions.length ? 16 : 0}}>
+        <div style={{textAlign:'center',flexShrink:0}}>
+          <div style={{width:84,height:84,border:`4px solid ${scoreColor}`,borderRadius:'50%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',margin:'0 auto 6px'}}>
+            <div style={{fontSize:26,fontWeight:800,color:scoreColor,lineHeight:1}}>{score ?? '—'}</div>
+            <div style={{fontSize:12,color:scoreColor,fontWeight:600}}>{scoreLabel}</div>
+          </div>
+          <div style={{fontSize:10,color:'#718096',textTransform:'uppercase',letterSpacing:'0.5px'}}>Health Score</div>
+        </div>
+        <div style={{flex:1,display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,minWidth:180}}>
+          {CATS.map(({key,label}) => (
+            <div key={key} style={{background:'#1a202c',borderRadius:6,padding:'8px 10px',border:'1px solid #2d3748'}}>
+              <div style={{fontSize:10,color:'#718096',marginBottom:2}}>{label}</div>
+              <div style={{fontSize:17,fontWeight:700,color:gradeColor(grades[key])}}>{grades[key] || '—'}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:'#4a5568',alignSelf:'flex-start',flexShrink:0,textAlign:'right'}}>
+          {daysSince === 0 ? 'Updated today' : daysSince === 1 ? 'Updated yesterday' : daysSince !== null ? `Updated ${daysSince}d ago` : ''}
+          <br/>
+          <span style={{cursor:'pointer',color:'#63b3ed'}} onClick={onRunAgents}>Refresh →</span>
+        </div>
+      </div>
+      {actions.length > 0 && (
+        <div style={{borderTop:'1px solid #2d3748',paddingTop:14}}>
+          <div style={{fontSize:11,color:'#718096',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>Your Action Plan This Month</div>
+          {actions.map((action, i) => (
+            <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:8}}>
+              <input type="checkbox" style={{accentColor:'#68d391',width:15,height:15,marginTop:2,flexShrink:0}} readOnly />
+              <span style={{fontSize:13,color:'#e2e8f0',lineHeight:1.5}}>{action}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // NET WORTH TAB (uses real snapshot history)
 // =============================================================================
 function NetWorthTab({ state, dispatch }) {
-  const { assets, liabilities, cash, livePrices, profile, snapshots } = state;
+  const { assets, liabilities, cash, livePrices, profile, snapshots, agentResults, agentStatus, agentUpdatedAt } = state;
   const [showAddCash, setShowAddCash] = useState(false);
   const [newCash, setNewCash] = useState({ name:'', amount:0, apy:0 });
   const [cashErr, setCashErr] = useState('');
@@ -648,6 +781,11 @@ function NetWorthTab({ state, dispatch }) {
   const cashValue  = cash.reduce((s,c) => s + c.amount, 0);
   const debtValue  = liabilities.reduce((s,l) => s + l.balance, 0);
   const netWorth   = assetValue + cashValue - debtValue;
+  const sortedSnaps = [...(snapshots||[])].sort((a,b) =>
+    (a.snapshot_month||a.snapshotMonth||'').localeCompare(b.snapshot_month||b.snapshotMonth||''));
+  const prevSnap = sortedSnaps.length >= 2 ? sortedSnaps[sortedSnaps.length-2] : null;
+  const nwDelta = prevSnap ? netWorth - (prevSnap.net_worth ?? prevSnap.netWorth ?? 0) : null;
+  const nwDeltaPct = (nwDelta !== null && prevSnap) ? (nwDelta / Math.abs(prevSnap.net_worth ?? prevSnap.netWorth ?? 1) * 100) : null;
   const costBasisTotal = assets.reduce((s,a) => s + a.costBasis * a.shares, 0);
   const unrealizedGain = assetValue - costBasisTotal;
 
@@ -712,8 +850,23 @@ function NetWorthTab({ state, dispatch }) {
 
   return (
     <div>
+      <HealthScoreCard
+        agentResults={agentResults}
+        agentStatus={agentStatus}
+        agentUpdatedAt={agentUpdatedAt}
+        onRunAgents={() => dispatch({ type:'SET_TAB', tab:'AI Agents' })}
+      />
       <div className="grid g4 gap-4 mb-6">
-        {statCard('Net Worth', fmtFull(netWorth), `${fmtFull(assetValue+cashValue)} assets — ${fmtFull(debtValue)} debt`, netWorth>=0?'#68d391':'#fc8181')}
+        {statCard('Net Worth', fmtFull(netWorth), (
+          <span>
+            {`${fmtFull(assetValue+cashValue)} assets — ${fmtFull(debtValue)} debt`}
+            {nwDelta !== null ? (
+              <span style={{display:'block',fontSize:11,color:nwDelta>=0?'#68d391':'#fc8181',marginTop:2}}>
+                {nwDelta>=0?'▲':'▼'} {fmtFull(Math.abs(nwDelta))} ({Math.abs(nwDeltaPct).toFixed(1)}%) vs last month
+              </span>
+            ) : null}
+          </span>
+        ), netWorth>=0?'#68d391':'#fc8181')}
         {statCard('Investment Portfolio', fmtFull(assetValue), `Cost basis ${fmtFull(costBasisTotal)}`)}
         {statCard('Unrealized P&L', fmtFull(unrealizedGain), costBasisTotal>0?`${(unrealizedGain/costBasisTotal*100).toFixed(1)}% total return`:null, unrealizedGain>=0?'#68d391':'#fc8181')}
         {statCard('Cash & Savings', fmtFull(cashValue), cash.map(c=>c.name).join(', ')||'—')}
@@ -1006,6 +1159,10 @@ function PortfolioTab({ state, dispatch }) {
 
   const totalValue = enriched.reduce((s,a) => s+a.value, 0);
 
+  const topAsset = enriched && enriched.length ? enriched.reduce((a,b)=>(+(a.value||0))>(+(b.value||0))?a:b) : null;
+  const topPct = topAsset && totalValue > 0 ? (+(topAsset.value||0)/totalValue*100) : 0;
+  const isConcentrated = topPct > 25 || (topPct > 15 && (state.profile?.riskTolerance||state.profile?.risk_tolerance||3) <= 2);
+
   const typeGroups = useMemo(() => {
     const m = {};
     enriched.forEach(a => { m[a.assetType] = (m[a.assetType]||0) + a.value; });
@@ -1073,6 +1230,17 @@ function PortfolioTab({ state, dispatch }) {
             if (items.length > 0) setNewAsset({...items[0], purchaseDate: items[0].purchaseDate||''});
           }}
         />
+      )}
+
+      {topAsset && totalValue > 0 && (
+        <div className="card mb-4" style={{background:isConcentrated?'#1a100f':'#0f1a0f',border:`1px solid ${isConcentrated?'#744210':'#276749'}`}}>
+          <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.6}}>
+            <span style={{fontWeight:600,color:'#63b3ed'}}>{topAsset.ticker}</span> is your largest position at <strong>{topPct.toFixed(1)}%</strong>.{' '}
+            {isConcentrated
+              ? <span style={{color:'#f6ad55'}}>This concentration may increase portfolio risk — consider diversifying.</span>
+              : <span style={{color:'#68d391'}}>This is within a healthy range.</span>}
+          </div>
+        </div>
       )}
 
       <div className="card mb-6" style={{padding:0,overflow:'hidden'}}>
@@ -1272,6 +1440,35 @@ function DebtTab({ state, dispatch }) {
     return {months:month, totalInterest:Math.round(totalInterest)};
   }, [liabilities, extra]);
 
+  const avalancheWith200 = React.useMemo(() => {
+    if (!liabilities.length) return null;
+    let debts = liabilities.map(d=>({bal:+(d.balance||0),apr:+(d.apr||0)/100/12,min:+(d.minPayment||d.min_payment||0)}))
+      .sort((a,b)=>b.apr-a.apr);
+    const totalMin = debts.reduce((s,d)=>s+d.min,0);
+    let months=0;
+    const payment = totalMin + 200;
+    while(debts.some(d=>d.bal>0.01) && months<600){
+      months++;
+      let extra=200;
+      debts=debts.map(d=>{
+        if(d.bal<=0)return d;
+        d.bal+=d.bal*d.apr;
+        const pay=Math.min(d.bal,d.min);
+        d.bal-=pay;
+        return d;
+      });
+      for(let i=0;i<debts.length;i++){
+        if(debts[i].bal>0){
+          const pay=Math.min(debts[i].bal,extra);
+          debts[i].bal-=pay;
+          extra-=pay;
+          if(extra<=0)break;
+        }
+      }
+    }
+    return months<600?months:null;
+  }, [liabilities]);
+
   const snowball = useMemo(() => {
     if (!liabilities.length) return {months:0,totalInterest:0};
     let rem = liabilities.map(d=>({...d,bal:d.balance}));
@@ -1312,6 +1509,17 @@ function DebtTab({ state, dispatch }) {
 
   return (
     <div>
+      {liabilities.length > 0 && avalanche && avalanche.months < 600 && (
+        <div className="card mb-6" style={{background:'#0f1a0f',border:'1px solid #276749'}}>
+          <div style={{fontSize:12,color:'#68d391',fontWeight:600,marginBottom:6}}>Debt Payoff Outlook</div>
+          <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.7}}>
+            At minimum payments, you'll be debt-free in <strong>{avalanche.months} months</strong>.{' '}
+            {avalancheWith200 && avalancheWith200 < avalanche.months && (
+              <>Paying <span style={{color:'#68d391',fontWeight:600}}>$200/mo extra</span> cuts that to <strong>{avalancheWith200} months</strong> — saving {avalanche.months - avalancheWith200} months.</>
+            )}
+          </div>
+        </div>
+      )}
       <div className="grid g3 gap-4 mb-6">
         <div className="card card-sm"><div className="card-title">Total Debt</div><div className="card-value red">{fmtFull(totalDebt)}</div></div>
         <div className="card card-sm">
@@ -1423,6 +1631,7 @@ function DebtTab({ state, dispatch }) {
 // =============================================================================
 function GoalsTab({ state, dispatch }) {
   const { goals } = state;
+  const topGoal = goals && (goals.find(g=>g.priority==='high') || goals[0]);
   const [showAdd, setShowAdd] = useState(false);
   const [newGoal, setNewGoal] = useState({ name:'', targetAmount:0, targetDate:'', currentSaved:0, priority:'medium' });
   const [addErr, setAddErr] = useState('');
@@ -1458,6 +1667,27 @@ function GoalsTab({ state, dispatch }) {
 
   return (
     <div>
+      {topGoal && (() => {
+        const targetDate = topGoal.targetDate || topGoal.target_date;
+        const targetAmt = +(topGoal.targetAmount ?? topGoal.target_amount ?? 0);
+        const saved = +(topGoal.currentSaved ?? topGoal.current_saved ?? 0);
+        const now = new Date();
+        const end = targetDate ? new Date(targetDate) : null;
+        const mLeft = end ? Math.max(0,(end.getFullYear()-now.getFullYear())*12+end.getMonth()-now.getMonth()) : 0;
+        const needed = mLeft > 0 ? Math.max(0,targetAmt-saved)/mLeft : 0;
+        const capacity = (state.profile?.annualIncome||state.profile?.annual_income||0)/12*0.2;
+        const onTrack = capacity > 0 && needed <= capacity;
+        return (
+          <div className="card mb-4" style={{background:onTrack?'#0f1a0f':'#1a0f0f',border:`1px solid ${onTrack?'#276749':'#9b2c2c'}`}}>
+            <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.6}}>
+              <strong>{topGoal.name}:</strong>{' '}
+              {onTrack
+                ? <span style={{color:'#68d391'}}>You're on track — {fmtFull(needed)}/mo needed is within your estimated savings capacity.</span>
+                : <span style={{color:'#f6ad55'}}>You need {fmtFull(needed)}/mo to stay on track. Consider increasing contributions or adjusting your timeline.</span>}
+            </div>
+          </div>
+        );
+      })()}
       <div className="flex items-center justify-between mb-4">
         <div className="section-title" style={{marginBottom:0}}>Financial Goals</div>
         <button className="btn btn-primary btn-sm" onClick={()=>setShowAdd(v=>!v)}>
@@ -1891,7 +2121,7 @@ const AGENT_DEFS = [
 ];
 
 function AgentsTab({ state, dispatch }) {
-  const { apiKeys, agentResults, agentStatus, agentChat } = state;
+  const { apiKeys, agentResults, agentStatus, agentChat, agentUpdatedAt } = state;
   // ref needed to avoid stale closures in async runAll loop
   const agentResultsRef = useRef(agentResults);
   useEffect(() => { agentResultsRef.current = agentResults; }, [agentResults]);
@@ -1956,7 +2186,7 @@ function AgentsTab({ state, dispatch }) {
       if (attempt>0) await sleep(attempt*5000);
       try {
         synthResult = await callAPI(
-          [{role:'user',content:`Based on all specialist analyses below, provide a comprehensive financial health scorecard (A-F grades for each area) and exactly 3 specific, high-priority actions to take THIS MONTH.\n\n${agentSummaries}`}],
+          [{role:'user',content:`Based on all specialist analyses below, provide a comprehensive financial health scorecard (A-F grades for each area) and exactly 3 specific, high-priority actions to take THIS MONTH. Format grades EXACTLY as: \`Portfolio: B+\`, \`Debt: C\`, \`Tax: A-\`, \`Retirement: B\`, \`Risk: C+\`, \`Macro: B\` (use these exact category names).\n\n${agentSummaries}`}],
           `You are a Chief Investment Officer synthesizing specialist reports for ${state.profile.name}. Be direct, specific, and actionable. ${ctx}`,
           apiKeys.anthropic, 1600
         );
@@ -1964,10 +2194,12 @@ function AgentsTab({ state, dispatch }) {
     }
     setAgentResult('synthesis', synthResult);
     setAgentStatus('synthesis', 'done');
+    dispatch({ type:'SET_AGENT_UPDATED_AT', updatedAt: new Date().toISOString() });
     setRunningAll(false);
     // Persist results so they survive page refresh
     const finalResults = {...agentResultsRef.current, synthesis: synthResult};
-    apiPost('/api/agent-cache', { results: finalResults, chat: agentChatRef.current }).catch(()=>{});
+    const ts = new Date().toISOString();
+    apiPost('/api/agent-cache', { results: finalResults, chat: agentChatRef.current, updatedAt: ts }).catch(()=>{});
   }, [apiKeys.anthropic, runningAll, runAgent, state.profile.name, ctx, state.agentChat]);
 
   const runSynthesisOnly = useCallback(async () => {
@@ -1994,7 +2226,7 @@ function AgentsTab({ state, dispatch }) {
       const reply = await callAPI(history, `You are FinPal, a personal financial advisor. Be specific, data-driven, and actionable. Always reference their actual numbers.\n\n${ctx}`, apiKeys.anthropic, 1000);
       const updatedChat = [...history,{role:'assistant',content:reply}];
       dispatch({ type:'SET_AGENT_CHAT', chat:updatedChat });
-      apiPost('/api/agent-cache', { results: agentResultsRef.current, chat: updatedChat }).catch(()=>{});
+      apiPost('/api/agent-cache', { results: agentResultsRef.current, chat: updatedChat, updatedAt: agentUpdatedAt || new Date().toISOString() }).catch(()=>{});
     } catch(e) { dispatch({ type:'SET_AGENT_CHAT', chat:[...history,{role:'assistant',content:`Error: ${e.message}`}] }); }
     setChatLoading(false);
   }, [apiKeys.anthropic, agentChat, agentResults, chatLoading, ctx]);
@@ -2189,11 +2421,81 @@ function SettingsModal({ state, dispatch, onLogout, onClose }) {
   );
 }
 
+// =============================================================================
+// LANDING PAGE
+// =============================================================================
+function LandingPage({ onGetStarted }) {
+  return (
+    <div style={{minHeight:'100vh',background:'#0f1117',color:'#e2e8f0'}}>
+      <div style={{maxWidth:720,margin:'0 auto',padding:'72px 24px 48px',textAlign:'center'}}>
+        <div style={{fontSize:11,color:'#63b3ed',fontWeight:600,marginBottom:16,textTransform:'uppercase',letterSpacing:'1.5px'}}>Self-hosted · Private · Free</div>
+        <h1 style={{fontSize:'clamp(26px,5vw,46px)',fontWeight:800,lineHeight:1.1,marginBottom:20,color:'#f7fafc'}}>
+          Your AI financial advisor<br/><span style={{color:'#63b3ed'}}>that knows your numbers</span>
+        </h1>
+        <p style={{fontSize:16,color:'#a0aec0',lineHeight:1.75,marginBottom:32,maxWidth:500,margin:'0 auto 32px'}}>
+          6 AI specialists analyze your portfolio, debt, taxes, and retirement readiness. You get A-F grades and 3 concrete actions every month — like a CFP, but free and private.
+        </p>
+        <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap',marginBottom:56}}>
+          <button className="btn btn-primary" style={{padding:'12px 28px',fontSize:15}} onClick={onGetStarted}>Get Started Free →</button>
+          <button className="btn btn-secondary" style={{padding:'12px 28px',fontSize:15}} onClick={onGetStarted}>Sign In</button>
+        </div>
+      </div>
+      <div style={{maxWidth:820,margin:'0 auto',padding:'0 24px 48px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:20}}>
+        {[
+          {icon:'🎯',title:'Personalized advice',body:"ChatGPT gives generic advice. FinPal has your actual balances and holdings — every recommendation references your real numbers."},
+          {icon:'🗂️',title:'Complete picture',body:"Portfolio, debt, taxes, retirement, and risk — all analyzed together. We tell you what to do next, not just what you spent."},
+          {icon:'🔒',title:'Privacy first',body:"Self-hosted on your machine. Your data never leaves your server. No bank connections. No subscription. No data sold."},
+        ].map(v=>(
+          <div key={v.title} className="card" style={{textAlign:'center',padding:24}}>
+            <div style={{fontSize:34,marginBottom:10}}>{v.icon}</div>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>{v.title}</div>
+            <div style={{color:'#718096',fontSize:13,lineHeight:1.6}}>{v.body}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{maxWidth:620,margin:'0 auto 48px',padding:'0 24px'}}>
+        <div style={{fontSize:11,color:'#4a5568',textAlign:'center',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>Example dashboard</div>
+        <div className="card" style={{border:'1px solid #3182ce'}}>
+          <div style={{display:'flex',gap:20,alignItems:'center',flexWrap:'wrap',marginBottom:14}}>
+            <div style={{textAlign:'center',flexShrink:0}}>
+              <div style={{width:80,height:80,border:'4px solid #68d391',borderRadius:'50%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',margin:'0 auto 6px'}}>
+                <div style={{fontSize:24,fontWeight:800,color:'#68d391',lineHeight:1}}>76</div>
+                <div style={{fontSize:12,color:'#68d391',fontWeight:600}}>B+</div>
+              </div>
+              <div style={{fontSize:10,color:'#718096',textTransform:'uppercase'}}>Health Score</div>
+            </div>
+            <div style={{flex:1,display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:7,minWidth:160}}>
+              {[['Portfolio','B+','#63b3ed'],['Debt','C','#f6ad55'],['Tax','A-','#68d391'],['Retirement','B','#63b3ed'],['Risk','C+','#f6ad55'],['Macro','B-','#63b3ed']].map(([n,g,c])=>(
+                <div key={n} style={{background:'#1a202c',borderRadius:6,padding:'7px 9px',border:'1px solid #2d3748'}}>
+                  <div style={{fontSize:10,color:'#718096'}}>{n}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:c}}>{g}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{borderTop:'1px solid #2d3748',paddingTop:12}}>
+            <div style={{fontSize:10,color:'#718096',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:8}}>Action Plan This Month</div>
+            {['Increase 401(k) by 2% to capture full employer match','Pay $300/mo extra toward Chase Visa (24.9% APR)','Move $15k from savings to T-bills at 5.2% yield'].map((a,i)=>(
+              <div key={i} style={{display:'flex',gap:9,alignItems:'flex-start',marginBottom:6,fontSize:12,color:'#a0aec0',lineHeight:1.5}}>
+                <span style={{color:'#2d3748',flexShrink:0}}>☐</span>{a}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{textAlign:'center',padding:'0 24px 36px',color:'#4a5568',fontSize:12}}>
+        Open source · Self-hosted · No bank sync required · No data sold
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [authUser, setAuthUser]     = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [state, dispatch]           = useReducer(reducer, BLANK);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLanding, setShowLanding] = React.useState(true);
 
   useEffect(() => {
     apiGet('/api/auth/me')
@@ -2225,7 +2527,10 @@ function App() {
     </div>
   );
 
-  if (!authUser) return <LoginScreen onLogin={handleLogin} />;
+  if (!authUser) {
+    if (showLanding) return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+    return <LoginScreen onLogin={handleLogin} />;
+  }
   if (!state.setupComplete) return <SetupWizard onComplete={handleSetupComplete} />;
 
   const totalPortfolio = state.assets.reduce((s,a) => s+(state.livePrices[a.ticker]?.price||a.costBasis)*a.shares, 0);
