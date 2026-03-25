@@ -140,6 +140,8 @@ DATA_DIR=/data SESSION_SECRET=<random> npm start
 
 ## Screenshots
 
+<img width="1231" height="748" alt="image" src="https://github.com/user-attachments/assets/3861fa27-8ba8-4e25-a5a6-9ea25a7ad3db" />
+
 <img width="1440" height="769" alt="image" src="https://github.com/user-attachments/assets/80b77786-05ef-4a8b-bc46-80ef878baaf9" />
 
 <img width="1440" height="766" alt="image" src="https://github.com/user-attachments/assets/5b60a814-c6e5-4d29-af87-85d8df76a95a" />
