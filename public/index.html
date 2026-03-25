@@ -239,9 +239,9 @@ async function callAPI(messages, systemPrompt, apiKey, maxTokens=1400) {
   return (await r.json()).content[0].text;
 }
 
-/** Alpha Vantage via server proxy (handles rate limiting + caching) */
+/** Finnhub quote via server proxy (caches 15 min, no daily quota) */
 async function fetchStockPrice(ticker) {
-  const d = await apiGet(`/api/proxy/av/${encodeURIComponent(ticker)}`);
+  const d = await apiGet(`/api/proxy/quote/${encodeURIComponent(ticker)}`);
   if (d.error) throw new Error(d.error);
   return { price: d.price, changePct: d.changePct };
 }
@@ -333,7 +333,7 @@ const BLANK = {
   setupComplete: false, activeTab:'Net Worth',
   profile: { name:'', age:30, annualIncome:100000, filingStatus:'single', marginalTaxRateOverride:null, riskTolerance:3, primaryGoal:'retirement' },
   assets:[], liabilities:[], cash:[], goals:[], snapshots:[],
-  apiKeys: { anthropic:'', alphaVantage:'', finnhub:'', fred:'' },
+  apiKeys: { anthropic:'', finnhub:'', fred:'' },
   livePrices:{}, pricesFetching:false, pricesFetched:false,
   news:{}, macro:{}, newsFetchedAt:null, macroFetchedAt:null,
   agentResults:{}, agentStatus:{}, agentChat:[], agentUpdatedAt: null,
@@ -457,7 +457,7 @@ function LoginScreen({ onLogin }) {
         </form>
         {mode==='register' && (
           <p style={{fontSize:11,color:'#4a5568',marginTop:12,lineHeight:1.6}}>
-            Your data is stored locally on this server. API keys (Anthropic, Alpha Vantage, etc.) are saved per account and only ever sent directly to their respective services from your browser.
+            Your data is stored locally on this server. API keys are saved per account and used server-side — never exposed to the browser.
           </p>
         )}
       </div>
@@ -1136,7 +1136,7 @@ function PortfolioTab({ state, dispatch }) {
         if (asset.assetType === 'crypto') {
           const coinId = CRYPTO_IDS[asset.ticker.toUpperCase()] || asset.ticker.toLowerCase();
           prices[asset.ticker] = await fetchCryptoPrice(coinId);
-        } else if (asset.assetType !== 'other' && apiKeys.alphaVantage) {
+        } else if (asset.assetType !== 'other' && apiKeys.finnhub) {
           // Server proxy handles rate limiting (13s between calls) and caching (15 min)
           prices[asset.ticker] = await fetchStockPrice(asset.ticker);
         }
@@ -1210,7 +1210,7 @@ function PortfolioTab({ state, dispatch }) {
         <div className="flex gap-2 items-center">
           {pricesFetching && <span className="spinner" />}
           {fetchError && <span style={{fontSize:11,color:'#fc8181',maxWidth:280}}>{fetchError}</span>}
-          {!apiKeys.alphaVantage && <span style={{fontSize:11,color:'#718096'}}>Add Alpha Vantage key for live prices</span>}
+          {!apiKeys.finnhub && <span style={{fontSize:11,color:'#718096'}}>Add Finnhub key in Settings for live prices</span>}
           <button className="btn btn-secondary" onClick={fetchPrices} disabled={pricesFetching||assets.length===0}>
             {pricesFetching?'Fetching…':pricesFetched?'↻ Refresh':'Fetch Live Prices'}
           </button>
@@ -2099,44 +2099,31 @@ FINANCIAL GOALS:
 ${goalLines||'  (none)'}`.trim();
 }
 
+// Sub-agent definitions — used to build the single health-check prompt
 const AGENT_DEFS = [
-  { id:'portfolio', name:'Portfolio Analyst', icon:'📊', color:'#3182ce', bg:'#1a3a5c',
-    systemPrompt: ctx=>`You are an expert portfolio analyst. Be concise — use bullet points, no preamble.\n\n${ctx}`,
-    prompt:'In bullet points: (1) diversification assessment, (2) top concentration risk, (3) allocation vs my age/risk tolerance, (4) one specific action to improve. Be brief.' },
-  { id:'debt', name:'Debt Strategist', icon:'💳', color:'#fc8181', bg:'#4a1c1c',
-    systemPrompt: ctx=>`You are a debt elimination expert. Be concise — use bullet points, no preamble.\n\n${ctx}`,
-    prompt:'In bullet points: (1) avalanche vs snowball recommendation with reason, (2) any refinancing opportunity, (3) impact of $200/mo extra payment on payoff date. Use actual numbers.' },
-  { id:'tax', name:'Tax Efficiency', icon:'🏛️', color:'#68d391', bg:'#1c4532',
-    systemPrompt: ctx=>`You are a tax efficiency expert. Be concise — use bullet points, no preamble.\n\n${ctx}`,
-    prompt:'In bullet points: (1) any tax-loss harvesting opportunities, (2) asset location improvements (what should be in tax-advantaged vs taxable), (3) Roth conversion candidate if applicable. Be brief.' },
-  { id:'retirement', name:'Retirement Modeler', icon:'🎯', color:'#b794f4', bg:'#322a5c',
-    systemPrompt: ctx=>`You are a retirement planning expert. Be concise — use bullet points, no preamble.\n\n${ctx}`,
-    prompt:'In bullet points: (1) on-track status for retirement at 65, (2) FIRE number and current gap, (3) projected monthly income at retirement using 4% rule, (4) single biggest gap. Use actual numbers.' },
-  { id:'risk', name:'Risk Analyst', icon:'⚠️', color:'#f6ad55', bg:'#4a3b1c',
-    systemPrompt: ctx=>`You are a risk analyst. Be concise — use bullet points, no preamble.\n\n${ctx}`,
-    prompt:'In bullet points: (1) top concentration risk by position, (2) estimated portfolio impact in a 30% market drawdown, (3) does my risk profile match my stated tolerance? Be brief.' },
-  { id:'macro', name:'Market & Macro', icon:'🌍', color:'#4fd1c5', bg:'#1a3d3a',
-    systemPrompt: ctx=>`You are a macroeconomic analyst. Be concise — use bullet points, no preamble.\n\n${ctx}`,
-    prompt:'In bullet points: (1) current macro headwinds/tailwinds most relevant to my portfolio, (2) my most exposed holdings, (3) one tactical adjustment to consider. Be brief.' },
+  { id:'portfolio', name:'Portfolio Analyst',   icon:'📊', color:'#3182ce', bg:'#1a3a5c',
+    instruction: 'Analyze portfolio diversification, concentration risk, allocation quality vs age and risk tolerance. Give 2-3 specific bullet points with actual numbers.' },
+  { id:'debt',      name:'Debt Strategist',     icon:'💳', color:'#fc8181', bg:'#4a1c1c',
+    instruction: 'Recommend avalanche vs snowball with reason. Flag any refinancing opportunity. Calculate impact of $200/mo extra payment. Use actual balances and APRs.' },
+  { id:'tax',       name:'Tax Efficiency',      icon:'🏛️', color:'#68d391', bg:'#1c4532',
+    instruction: 'Identify tax-loss harvesting opportunities, asset location improvements (what belongs in tax-advantaged vs taxable), and any Roth conversion candidates. Be specific.' },
+  { id:'retirement',name:'Retirement Planner',  icon:'🎯', color:'#b794f4', bg:'#322a5c',
+    instruction: 'Assess retirement readiness: on-track status, FIRE number vs current portfolio, projected monthly income at 65 using 4% rule, biggest gap. Use actual numbers.' },
+  { id:'risk',      name:'Risk Analyst',        icon:'⚠️', color:'#f6ad55', bg:'#4a3b1c',
+    instruction: 'Identify top concentration risks by position and sector. Estimate portfolio impact in a 30% drawdown. Assess whether risk profile matches stated tolerance.' },
+  { id:'macro',     name:'Market & Macro',      icon:'🌍', color:'#4fd1c5', bg:'#1a3d3a',
+    instruction: 'Identify macro headwinds/tailwinds most relevant to this portfolio. Name the most exposed holdings. Suggest one tactical adjustment.' },
 ];
 
 function AgentsTab({ state, dispatch }) {
   const { apiKeys, agentResults, agentStatus, agentChat, agentUpdatedAt } = state;
-  // ref needed to avoid stale closures in async runAll loop
   const agentResultsRef = useRef(agentResults);
   useEffect(() => { agentResultsRef.current = agentResults; }, [agentResults]);
   const agentChatRef = useRef(agentChat);
   useEffect(() => { agentChatRef.current = agentChat; }, [agentChat]);
 
-  const [expanded, setExpanded]   = useState(() => {
-    // Auto-expand any agent that already has a saved result
-    const init = {};
-    AGENT_DEFS.forEach(d => { if (agentResults[d.id]) init[d.id] = true; });
-    if (agentResults.synthesis) init.synthesis = true;
-    return init;
-  });
-  const [runningAll, setRunningAll] = useState(false);
-  const [chatInput, setChatInput]     = useState('');
+  const [running, setRunning] = useState(false);
+  const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatRef = useRef(null);
 
@@ -2146,76 +2133,64 @@ function AgentsTab({ state, dispatch }) {
 
   const ctx = useMemo(() => buildContext(state), [state]);
 
-  const setAgentResult = (id, result) => dispatch({ type:'SET_AGENT_RESULT', id, result });
-  const setAgentStatus = (id, status) => dispatch({ type:'SET_AGENT_STATUS', id, status });
+  const runHealthCheck = useCallback(async () => {
+    if (!apiKeys.anthropic || running) return;
+    setRunning(true);
+    dispatch({ type:'CLEAR_AGENTS' });
+    dispatch({ type:'SET_AGENT_STATUS', id:'synthesis', status:'running' });
 
-  const runAgent = useCallback(async (def) => {
-    if (!apiKeys.anthropic) return;
-    setAgentStatus(def.id, 'running');
-    setExpanded(e=>({...e,[def.id]:true}));
-    let attempt=0, result=null;
-    while (attempt<3 && result===null) {
-      if (attempt>0) await sleep(attempt*5000);
+    const specialistContext = AGENT_DEFS.map(d =>
+      `- ${d.name}: ${d.instruction}`
+    ).join('\n');
+
+    const prompt = `Analyze ${state.profile.name}'s complete financial picture and write a single cohesive financial health report — not separate sections, but one flowing advisor narrative that weaves together portfolio, debt, tax, retirement, risk, and macro insights as they relate to each other.
+
+Before the narrative, output the grades block EXACTLY in this format (required for the dashboard):
+Portfolio: [A-F]
+Debt: [A-F]
+Tax: [A-F]
+Retirement: [A-F]
+Risk: [A-F]
+Macro: [A-F]
+
+Then write the report as one flowing piece. Cover these dimensions naturally within the narrative (do not use them as section headers):
+${specialistContext}
+
+End with:
+
+**Your 3 priorities this month:**
+1. [Specific action — dollar amounts, account names, exact numbers]
+2. [Specific action]
+3. [Specific action]
+
+Use actual numbers throughout. Be direct. Write as a trusted advisor who knows this person's finances deeply, not as a compliance document.`;
+
+    let attempt = 0, result = null;
+    while (attempt < 3 && result === null) {
+      if (attempt > 0) await sleep(attempt * 5000);
       try {
-        result = await callAPI([{role:'user',content:def.prompt}], def.systemPrompt(ctx), apiKeys.anthropic, 600);
+        result = await callAPI(
+          [{ role: 'user', content: prompt }],
+          `You are a rigorous financial advisory team for ${state.profile.name}. Every recommendation must cite actual numbers from the data provided. Do not hedge. ${ctx}`,
+          apiKeys.anthropic, 2500
+        );
       } catch(e) {
         attempt++;
-        if (attempt>=3) { setAgentStatus(def.id,'error'); setAgentResult(def.id,`Error: ${e.message}`); return; }
+        if (attempt >= 3) {
+          dispatch({ type:'SET_AGENT_STATUS', id:'synthesis', status:'error' });
+          setRunning(false);
+          return;
+        }
       }
     }
-    agentResultsRef.current = {...agentResultsRef.current,[def.id]:result};
-    setAgentResult(def.id, result);
-    setAgentStatus(def.id, 'done');
-    apiPost('/api/agent-cache', { results: agentResultsRef.current, chat: [] }).catch(()=>{});
-  }, [apiKeys.anthropic, ctx]);
 
-  const runAll = useCallback(async () => {
-    if (!apiKeys.anthropic||runningAll) return;
-    setRunningAll(true);
-    agentResultsRef.current = {};
-    dispatch({ type:'CLEAR_AGENTS' });
-    for (let i=0; i<AGENT_DEFS.length; i++) {
-      await runAgent(AGENT_DEFS[i]);
-      if (i<AGENT_DEFS.length-1) await sleep(1500);
-    }
-    const agentSummaries = AGENT_DEFS.map(d=>`## ${d.name}\n${agentResultsRef.current[d.id]||'(not run)'}`).join('\n\n');
-    setAgentStatus('synthesis', 'running');
-    setExpanded(e=>({...e,synthesis:true}));
-    let attempt=0, synthResult=null;
-    while (attempt<3&&synthResult===null) {
-      if (attempt>0) await sleep(attempt*5000);
-      try {
-        synthResult = await callAPI(
-          [{role:'user',content:`Based on the specialist analyses below, output ONLY the following — nothing else:\n\nScores:\nPortfolio: [A-F grade]\nDebt: [A-F grade]\nTax: [A-F grade]\nRetirement: [A-F grade]\nRisk: [A-F grade]\nMacro: [A-F grade]\n\nTop 3 Actions This Month:\n1. [specific action with dollar amounts where relevant]\n2. [specific action]\n3. [specific action]\n\nSpecialist reports:\n${agentSummaries}`}],
-          `You are a Chief Investment Officer for ${state.profile.name}. Output only the scorecard format requested. Be specific and use actual numbers from the reports.`,
-          apiKeys.anthropic, 400
-        );
-      } catch(e) { attempt++; if (attempt>=3) { setAgentStatus('synthesis','error'); setRunningAll(false); return; } }
-    }
-    setAgentResult('synthesis', synthResult);
-    setAgentStatus('synthesis', 'done');
+    dispatch({ type:'SET_AGENT_RESULT', id:'synthesis', result });
+    dispatch({ type:'SET_AGENT_STATUS', id:'synthesis', status:'done' });
     dispatch({ type:'SET_AGENT_UPDATED_AT', updatedAt: new Date().toISOString() });
-    setRunningAll(false);
-    // Persist results so they survive page refresh
-    const finalResults = {...agentResultsRef.current, synthesis: synthResult};
+    setRunning(false);
     const ts = new Date().toISOString();
-    apiPost('/api/agent-cache', { results: finalResults, chat: agentChatRef.current, updatedAt: ts }).catch(()=>{});
-  }, [apiKeys.anthropic, runningAll, runAgent, state.profile.name, ctx, state.agentChat]);
-
-  const runSynthesisOnly = useCallback(async () => {
-    if (!apiKeys.anthropic) return;
-    const agentSummaries = AGENT_DEFS.map(d=>`## ${d.name}\n${agentResults[d.id]||'(not run)'}`).join('\n\n');
-    setAgentStatus('synthesis', 'running');
-    setExpanded(e=>({...e,synthesis:true}));
-    try {
-      const r = await callAPI(
-        [{role:'user',content:`Based on the specialist analyses below, output ONLY:\n\nScores:\nPortfolio: [A-F grade]\nDebt: [A-F grade]\nTax: [A-F grade]\nRetirement: [A-F grade]\nRisk: [A-F grade]\nMacro: [A-F grade]\n\nTop 3 Actions This Month:\n1. [specific action]\n2. [specific action]\n3. [specific action]\n\nSpecialist reports:\n${agentSummaries}`}],
-        `You are a Chief Investment Officer. Output only the scorecard format requested.`, apiKeys.anthropic, 400
-      );
-      setAgentResult('synthesis', r);
-      setAgentStatus('synthesis', 'done');
-    } catch(e) { setAgentStatus('synthesis','error'); }
-  }, [apiKeys.anthropic, agentResults, ctx]);
+    apiPost('/api/agent-cache', { results: { synthesis: result }, chat: agentChatRef.current, updatedAt: ts }).catch(()=>{});
+  }, [apiKeys.anthropic, running, state.profile.name, ctx]);
 
   const sendChat = useCallback(async (msg) => {
     if (!msg.trim()||!apiKeys.anthropic||chatLoading) return;
@@ -2233,76 +2208,57 @@ function AgentsTab({ state, dispatch }) {
 
   const CHIPS = ['Am I on track for retirement?','Which debt should I pay first?','What should I invest $500/month in?','How can I reduce my taxes?','What is my biggest financial risk?'];
 
-  const statusBadge = id => {
-    const s = agentStatus[id];
-    if (s==='running') return <span className="agent-running" style={{fontSize:12,color:'#63b3ed'}}>● Running…</span>;
-    if (s==='done')    return <span className="badge b-green">✓ Done</span>;
-    if (s==='error')   return <span className="badge b-red">✗ Error</span>;
-    return <span className="badge" style={{background:'#2d3748',color:'#718096'}}>Idle</span>;
-  };
+  const hasSynthesis = !!agentResults.synthesis;
+  const isRunning = agentStatus.synthesis === 'running';
 
   if (!apiKeys.anthropic) {
     return (
       <div className="card tc" style={{padding:40}}>
         <div style={{fontSize:32,marginBottom:12}}>🤖</div>
         <div className="bold" style={{fontSize:16,marginBottom:8}}>Anthropic API Key Required</div>
-        <div className="gray" style={{fontSize:13}}>Add your Anthropic API key in Settings to use AI Agents and the personal advisor chat.</div>
+        <div className="gray" style={{fontSize:13}}>Add your Anthropic API key in Settings to use the AI health check and advisor chat.</div>
       </div>
     );
   }
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <div className="bold" style={{fontSize:15}}>AI Financial Advisory Team</div>
-          <div style={{fontSize:12,color:'#718096'}}>6 specialist agents analyze your complete financial picture</div>
+          <div className="bold" style={{fontSize:15}}>AI Financial Health Check</div>
+          <div style={{fontSize:12,color:'#718096'}}>
+            {AGENT_DEFS.map(d=>d.icon).join(' ')} Portfolio · Debt · Tax · Retirement · Risk · Macro
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button className="btn btn-secondary btn-sm" onClick={runSynthesisOnly} disabled={runningAll}>Synthesize Only</button>
-          <button className="btn btn-primary" onClick={runAll} disabled={runningAll}>
-            {runningAll?<span className="flex items-center gap-2"><span className="spinner" />Running all agents…</span>:'▶ Run All Agents'}
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={runHealthCheck} disabled={running}>
+          {running
+            ? <span className="flex items-center gap-2"><span className="spinner"/>Analyzing…</span>
+            : hasSynthesis ? '↻ Re-run Health Check' : '▶ Run Health Check'}
+        </button>
       </div>
 
-      {AGENT_DEFS.map(def => (
-        <div key={def.id} className="agent-card">
-          <div className="agent-hdr" onClick={()=>setExpanded(e=>({...e,[def.id]:!e[def.id]}))}>
-            <div className="agent-icon" style={{background:def.bg}}><span>{def.icon}</span></div>
-            <div className="flex-1">
-              <div className="bold" style={{fontSize:13}}>{def.name}</div>
-              <div style={{fontSize:11,color:'#718096'}}>{def.prompt.slice(0,80)}…</div>
-            </div>
-            {statusBadge(def.id)}
-            <button className="btn btn-secondary btn-sm" style={{marginLeft:8}}
-              onClick={e=>{e.stopPropagation();runAgent(def);}}
-              disabled={runningAll||agentStatus[def.id]==='running'}>
-              {agentStatus[def.id]==='running'?'…':'Run'}
-            </button>
-            <span style={{color:'#718096',marginLeft:8,fontSize:12}}>{expanded[def.id]?'▲':'▼'}</span>
-          </div>
-          {expanded[def.id]&&agentResults[def.id] && (
-            <div className="agent-body"><RenderedText text={agentResults[def.id]} /></div>
-          )}
+      {/* Report */}
+      {isRunning && (
+        <div className="card mb-4" style={{textAlign:'center',padding:32}}>
+          <div style={{color:'#63b3ed',fontSize:14,marginBottom:8}}>● Running analysis across all 6 specialist areas…</div>
+          <div style={{color:'#4a5568',fontSize:12}}>Portfolio · Debt · Tax · Retirement · Risk · Macro</div>
         </div>
-      ))}
-
-      <div className="agent-card" style={{border:'1px solid #3182ce'}}>
-        <div className="agent-hdr" onClick={()=>setExpanded(e=>({...e,synthesis:!e.synthesis}))}>
-          <div className="agent-icon" style={{background:'#1a3a5c'}}>🎖️</div>
-          <div className="flex-1">
-            <div className="bold" style={{fontSize:13,color:'#63b3ed'}}>CIO Synthesis — Financial Health Report</div>
-            <div style={{fontSize:11,color:'#718096'}}>Scorecard + 3 action items based on all specialist analyses</div>
-          </div>
-          {statusBadge('synthesis')}
-          <span style={{color:'#718096',marginLeft:8,fontSize:12}}>{expanded.synthesis?'▲':'▼'}</span>
+      )}
+      {!isRunning && hasSynthesis && (
+        <div className="card mb-6">
+          <RenderedText text={agentResults.synthesis} />
         </div>
-        {expanded.synthesis&&agentResults.synthesis && (
-          <div className="agent-body"><RenderedText text={agentResults.synthesis} /></div>
-        )}
-      </div>
+      )}
+      {!isRunning && !hasSynthesis && (
+        <div className="card mb-6" style={{border:'1px solid #2d3748',textAlign:'center',padding:40}}>
+          <div style={{fontSize:36,marginBottom:12}}>🎖️</div>
+          <div className="bold" style={{fontSize:15,marginBottom:8}}>Your financial health report will appear here</div>
+          <div style={{color:'#718096',fontSize:13}}>Click "Run Health Check" to get a complete analysis across portfolio, debt, tax efficiency, retirement readiness, risk, and macro exposure.</div>
+        </div>
+      )}
 
+      {/* Chat */}
       <div className="mt-4">
         <div className="section-title">Personal Advisor Chat</div>
         <div className="chat-wrap">
@@ -2365,7 +2321,7 @@ function SettingsModal({ state, dispatch, onLogout, onClose }) {
 
         <div style={{fontSize:11,fontWeight:600,color:'#718096',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>API Keys</div>
         <p style={{fontSize:11,color:'#4a5568',marginBottom:14,lineHeight:1.6}}>Keys are stored in this server's database and sent directly to each provider from your browser — never proxied.</p>
-        {[['anthropic','Anthropic API Key'],['alphaVantage','Alpha Vantage Key'],['finnhub','Finnhub Key'],['fred','FRED Key']].map(([k,label])=>(
+        {[['anthropic','Anthropic API Key'],['finnhub','Finnhub Key'],['fred','FRED Key']].map(([k,label])=>(
           <div key={k} className="form-group">
             <label>{label}</label>
             <input type="password" value={keys[k]||''} onChange={e=>setKeys(ks=>({...ks,[k]:e.target.value}))} autoComplete="off" />

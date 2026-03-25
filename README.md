@@ -6,7 +6,7 @@ A local-first personal finance dashboard. Track your net worth, investments, deb
 
 - **Net Worth tracking** — assets, liabilities, cash accounts, snapshots over time
 - **Portfolio management** — stocks, crypto, and other holdings with lot-level cost basis tracking
-- **Live prices** — Alpha Vantage (stocks/ETFs) and CoinGecko (crypto) via server-side proxy
+- **Live prices** — Finnhub (stocks/ETFs, 60 req/min) and CoinGecko (crypto) via server-side proxy
 - **AI Agents** — five specialist advisors (budget, investments, debt, tax, macro) plus synthesis, powered by Claude
 - **AI Chat** — ask follow-up questions about your finances with full context
 - **Market tab** — FRED macro indicators, stock news via Finnhub
@@ -54,9 +54,8 @@ All keys are stored per-user in the database (never in source). Add them in **Se
 | Key            | Used for                                  | Free tier                        |
 |----------------|-------------------------------------------|----------------------------------|
 | Anthropic      | AI agents + chat                          | Pay-per-use                      |
-| Alpha Vantage  | Stock/ETF prices                          | 25 req/day                       |
-| CoinGecko      | Crypto prices                             | Free (no key needed for demo)    |
-| Finnhub        | Stock news                                | 60 req/min free                  |
+| Finnhub        | Stock/ETF prices + news                   | 60 req/min, no daily cap         |
+| CoinGecko      | Crypto prices                             | Free (no key needed)             |
 | FRED           | Macro indicators (rates, inflation, etc.) | Free                             |
 
 ## Project Structure
@@ -87,7 +86,7 @@ The directory and both files are created automatically on first run. They are gi
 | Table          | Contents                                              |
 |----------------|-------------------------------------------------------|
 | `users`        | Accounts, profile (income, age, risk tolerance, etc.) |
-| `api_keys`     | Per-user API keys (Anthropic, Alpha Vantage, etc.)    |
+| `api_keys`     | Per-user API keys (Anthropic, Finnhub, FRED)          |
 | `assets`       | Holdings with weighted-average cost basis             |
 | `asset_lots`   | Individual purchase lots per asset                    |
 | `liabilities`  | Debts with APR and minimum payment                    |

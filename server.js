@@ -298,50 +298,30 @@ app.post('/api/agent-cache', requireAuth, (req, res) => {
 // ─── Market data proxies ──────────────────────────────────────────────────────
 // These proxy external APIs server-side to avoid CORS issues and hide API keys.
 
-// In-memory price cache so multiple requests don't burn the daily quota
+// In-memory price cache — 15 min TTL (Finnhub free tier: 60 req/min, no daily cap)
 const priceCache = new Map(); // ticker → { price, changePct, fetchedAt }
-const PRICE_CACHE_TTL = 8 * 60 * 60 * 1000; // 8 hours — conserves 25/day free quota
-let lastAVCall = 0;
-const AV_THROTTLE_MS = 13000; // 5 req/min limit → 12s min; 13s adds buffer
+const PRICE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const finnhubCache = new Map(); // `news_${ticker}` → { data, fetchedAt }
 const FINNHUB_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 const fredCache = new Map(); // seriesId → { data, fetchedAt }
 const FRED_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
-// GET /api/proxy/av/:ticker — Alpha Vantage GLOBAL_QUOTE via server with rate limiter
-app.get('/api/proxy/av/:ticker', requireAuth, async (req, res) => {
+// GET /api/proxy/quote/:ticker — Finnhub quote (60 req/min free, no daily cap)
+app.get('/api/proxy/quote/:ticker', requireAuth, async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
   const cached = priceCache.get(ticker);
-  if (cached && Date.now() - cached.fetchedAt < PRICE_CACHE_TTL) {
-    return res.json(cached);
-  }
+  if (cached && Date.now() - cached.fetchedAt < PRICE_CACHE_TTL) return res.json(cached);
   const keys = db.getApiKeys(req.session.userId);
-  if (!keys.alphaVantage) return res.status(400).json({ error: 'No Alpha Vantage API key set' });
-
-  // Enforce rate limit — wait if called too soon after the last request
-  const wait = lastAVCall + AV_THROTTLE_MS - Date.now();
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  lastAVCall = Date.now();
-
+  if (!keys.finnhub) return res.status(400).json({ error: 'No Finnhub API key set' });
   try {
-    const r = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(ticker)}&apikey=${keys.alphaVantage}`);
+    const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${keys.finnhub}`);
     const d = await r.json();
-    // AV returns rate-limit/quota messages in these fields instead of an error status
-    if (d['Note'] || d['Information']) {
-      const msg = d['Note'] || d['Information'];
-      return res.status(429).json({ error: `Alpha Vantage quota reached: ${msg}` });
-    }
-    const q = d['Global Quote'];
-    if (!q || !q['05. price']) return res.status(400).json({ error: `No quote for ${ticker}` });
-    const result = {
-      price:      +q['05. price'],
-      changePct:  parseFloat((q['10. change percent'] || '0').replace('%', '')),
-      fetchedAt:  Date.now(),
-    };
+    if (!d.c || d.c === 0) return res.status(400).json({ error: `No quote for ${ticker}` });
+    const result = { price: d.c, changePct: d.dp ?? 0, fetchedAt: Date.now() };
     priceCache.set(ticker, result);
     res.json(result);
   } catch (e) {
-    res.status(502).json({ error: `AV fetch failed: ${e.message}` });
+    res.status(502).json({ error: `Finnhub fetch failed: ${e.message}` });
   }
 });
 
