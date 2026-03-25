@@ -2301,7 +2301,7 @@ function LandingPage({ onGetStarted }) {
         {[
           {icon:'🎯',title:'Personalized advice',body:"ChatGPT gives generic advice. FinPal has your actual balances and holdings — every recommendation references your real numbers."},
           {icon:'🗂️',title:'Complete picture',body:"Portfolio, debt, taxes, retirement, and risk — all analyzed together. We tell you what to do next, not just what you spent."},
-          {icon:'🔒',title:'Privacy first',body:"Self-hosted on your machine. Your data never leaves your server. No bank connections. No subscription. No data sold."},
+          {icon:'🔒',title:'Privacy first',body:"Self-hosted on your machine. Your data never leaves your server. No bank connections. No data sold. AI features are opt-in and use your own Anthropic API key (pay-per-use, ~cents per analysis)."},
         ].map(v=>(
           <div key={v.title} className="card" style={{textAlign:'center',padding:24}}>
             <div style={{fontSize:34,marginBottom:10}}>{v.icon}</div>
