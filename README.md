@@ -71,6 +71,66 @@ finpal/
 └── data/           # SQLite databases (gitignored)
 ```
 
+## Database
+
+FinPal uses two SQLite files, both stored in `DATA_DIR` (`./data` by default):
+
+| File           | Purpose                                      |
+|----------------|----------------------------------------------|
+| `finpal.db`    | All user data — accounts, assets, portfolios |
+| `sessions.db`  | Express session store                        |
+
+The directory and both files are created automatically on first run. They are gitignored — never commit them.
+
+### Schema overview
+
+| Table          | Contents                                              |
+|----------------|-------------------------------------------------------|
+| `users`        | Accounts, profile (income, age, risk tolerance, etc.) |
+| `api_keys`     | Per-user API keys (Anthropic, Alpha Vantage, etc.)    |
+| `assets`       | Holdings with weighted-average cost basis             |
+| `asset_lots`   | Individual purchase lots per asset                    |
+| `liabilities`  | Debts with APR and minimum payment                    |
+| `cash_accounts`| Cash/savings accounts with APY                        |
+| `goals`        | Financial goals with target amount and date           |
+| `snapshots`    | Monthly net worth snapshots for trend tracking        |
+| `agent_cache`  | Saved AI agent results and chat history               |
+| `market_cache` | Cached market/macro data (prices, news, FRED)         |
+
+### Migrations
+
+Schema changes are applied automatically at startup via `CREATE TABLE IF NOT EXISTS` and idempotent `ALTER TABLE` statements in `db.js`. No manual migration step is needed.
+
+### Backup
+
+Copy `finpal.db` — that's your entire dataset. For automated backups on Linux/macOS:
+
+```bash
+# Daily backup to ~/finpal-backups/
+0 2 * * * cp /path/to/data/finpal.db ~/finpal-backups/finpal-$(date +%Y%m%d).db
+```
+
+### Resetting data
+
+To wipe everything and start fresh:
+
+```bash
+rm data/finpal.db data/sessions.db
+npm start   # recreates both files automatically
+```
+
+To remove a single user's data, delete their row from the `users` table — cascading deletes handle the rest:
+
+```bash
+sqlite3 data/finpal.db "DELETE FROM users WHERE username = 'alice';"
+```
+
+### Production notes
+
+- **WAL mode** is enabled by default — safe for concurrent reads with a single writer
+- **Foreign keys** are enforced — cascading deletes keep data consistent
+- SQLite is suitable for single-server personal use. If you need multi-server or high concurrency, swap `db.js` for a Postgres adapter
+
 ## Deployment
 
 The app runs anywhere Node.js is available. For platforms with persistent storage (Render, Railway, Fly.io), set `DATA_DIR` to a mounted volume path so the SQLite databases survive deploys.
