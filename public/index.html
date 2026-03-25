@@ -469,50 +469,22 @@ function LoginScreen({ onLogin }) {
 // SETUP WIZARD (5 steps — API keys now in Settings, not wizard)
 // =============================================================================
 function SetupWizard({ onComplete }) {
-  const STEPS = ['Profile','Assets','Liabilities','Cash','Goals'];
-  const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
   const [profile, setProfile] = useState({ name:'', age:30, annualIncome:100000, filingStatus:'single', marginalTaxRateOverride:null, riskTolerance:3, primaryGoal:'retirement' });
-  const [assets, setAssets] = useState([]);
-  const [liabilities, setLiabilities] = useState([]);
-  const [cash, setCash] = useState([]);
-  const [goals, setGoals] = useState([]);
-
-  // Temp form state for each item type
-  const [na, setNa] = useState({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
-  const [nl, setNl] = useState({ name:'', type:'mortgage', balance:0, apr:5, minPayment:0 });
-  const [nc, setNc] = useState({ name:'', amount:0, apy:0 });
-  const [ng, setNg] = useState({ name:'', targetAmount:0, targetDate:'', currentSaved:0, priority:'medium' });
 
   const pf = (k,v) => setProfile(p=>({...p,[k]:v}));
 
-  // ── Finish: save everything to the backend ───────────────────────────────
   const finish = async () => {
     setSaving(true); setError('');
     try {
-      // 1. Save profile and mark setup complete
       await apiPut('/api/profile', { ...profile, setupComplete:true });
-
-      // 2. Bulk insert assets/liabilities/cash/goals in parallel batches
-      const [savedAssets, savedLiabilities, savedCash, savedGoals] = await Promise.all([
-        Promise.all(assets.map(a => apiPost('/api/assets', a))),
-        Promise.all(liabilities.map(l => apiPost('/api/liabilities', l))),
-        Promise.all(cash.map(c => apiPost('/api/cash', c))),
-        Promise.all(goals.map(g => apiPost('/api/goals', g))),
-      ]);
-
-      onComplete({ profile:{ ...profile, setupComplete:true },
-                   assets:savedAssets, liabilities:savedLiabilities,
-                   cash:savedCash, goals:savedGoals, snapshots:[] });
+      onComplete({ profile:{ ...profile, setupComplete:true }, assets:[], liabilities:[], cash:[], goals:[], snapshots:[] });
     } catch (e) {
       setError(e.message);
       setSaving(false);
     }
   };
-
-  const addItem = (list, setList, item, reset) => { setList(l=>[...l,{...item, _id:Date.now()}]); reset(); };
 
   const renderProfile = () => (
     <div>
@@ -567,113 +539,17 @@ function SetupWizard({ onComplete }) {
     </div>
   );
 
-  const [showWizardAdd, setShowWizardAdd] = useState(false);
-  const [wizardAddErr, setWizardAddErr] = useState('');
-  const addWizardAsset = () => {
-    if (!na.ticker.trim()) return setWizardAddErr('Ticker required');
-    setWizardAddErr('');
-    setAssets(l=>[...l, {...na, ticker:na.ticker.toUpperCase(), shares:+na.shares, costBasis:+na.costBasis, _id:Date.now()}]);
-    setNa({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
-    setShowWizardAdd(false);
-  };
-  const renderAssets = () => (
-    <div>
-      {showWizardAdd ? (
-        <AddAssetPanel newAsset={na} setNewAsset={setNa} addAsset={addWizardAsset} addErr={wizardAddErr} compact />
-      ) : (
-        <button className="btn btn-primary btn-sm mb-4" onClick={()=>setShowWizardAdd(true)}>+ Add Asset</button>
-      )}
-      {assets.length>0 && <table><thead><tr><th>Ticker</th><th>Shares</th><th>Cost</th><th>Account</th><th></th></tr></thead>
-        <tbody>{assets.map((a,i)=><tr key={i}><td className="bold">{a.ticker}</td><td>{a.shares}</td><td>{fmtFull(a.costBasis*a.shares)}</td><td><span className="badge b-blue">{a.accountType}</span></td><td><button className="btn btn-danger btn-sm" onClick={()=>setAssets(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
-    </div>
-  );
-
-  const renderLiabilities = () => (
-    <div>
-      <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
-        <div className="form-group" style={{marginBottom:0}}><label>Name</label>
-          <input value={nl.name} onChange={e=>setNl(l=>({...l,name:e.target.value}))} placeholder="Chase Mortgage" /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Type</label>
-          <select value={nl.type} onChange={e=>setNl(l=>({...l,type:e.target.value}))}>
-            <option value="mortgage">Mortgage</option><option value="auto">Auto</option>
-            <option value="student">Student Loan</option><option value="credit_card">Credit Card</option><option value="other">Other</option></select></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Balance ($)</label>
-          <input type="number" min="0" value={nl.balance} onChange={e=>setNl(l=>({...l,balance:e.target.value}))} /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>APR (%)</label>
-          <input type="number" min="0" step="0.1" value={nl.apr} onChange={e=>setNl(l=>({...l,apr:e.target.value}))} /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Min Payment ($)</label>
-          <input type="number" min="0" value={nl.minPayment} onChange={e=>setNl(l=>({...l,minPayment:e.target.value}))} /></div>
-      </div>
-      <button className="btn btn-primary btn-sm mb-4" onClick={()=>{ if(!nl.name) return; setLiabilities(l=>[...l,{...nl,balance:+nl.balance,apr:+nl.apr,minPayment:+nl.minPayment}]); setNl({name:'',type:'mortgage',balance:0,apr:5,minPayment:0}); }}>+ Add Debt</button>
-      {liabilities.length>0 && <table><thead><tr><th>Name</th><th>Balance</th><th>APR</th><th></th></tr></thead>
-        <tbody>{liabilities.map((l,i)=><tr key={i}><td className="bold">{l.name}</td><td className="red">{fmtFull(l.balance)}</td><td>{l.apr}%</td><td><button className="btn btn-danger btn-sm" onClick={()=>setLiabilities(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
-    </div>
-  );
-
-  const renderCash = () => (
-    <div>
-      <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
-        <div className="form-group" style={{marginBottom:0}}><label>Account Name</label>
-          <input value={nc.name} onChange={e=>setNc(c=>({...c,name:e.target.value}))} placeholder="Marcus HYSA" /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Balance ($)</label>
-          <input type="number" min="0" value={nc.amount} onChange={e=>setNc(c=>({...c,amount:e.target.value}))} /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>APY (%)</label>
-          <input type="number" min="0" step="0.01" value={nc.apy} onChange={e=>setNc(c=>({...c,apy:e.target.value}))} /></div>
-      </div>
-      <button className="btn btn-primary btn-sm mb-4" onClick={()=>{ if(!nc.name) return; setCash(c=>[...c,{...nc,amount:+nc.amount,apy:+nc.apy}]); setNc({name:'',amount:0,apy:0}); }}>+ Add Account</button>
-      {cash.length>0 && <table><thead><tr><th>Account</th><th>Balance</th><th>APY</th><th></th></tr></thead>
-        <tbody>{cash.map((c,i)=><tr key={i}><td className="bold">{c.name}</td><td>{fmtFull(c.amount)}</td><td>{c.apy}%</td><td><button className="btn btn-danger btn-sm" onClick={()=>setCash(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
-    </div>
-  );
-
-  const renderGoals = () => (
-    <div>
-      <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
-        <div className="form-group" style={{marginBottom:0}}><label>Goal Name</label>
-          <input value={ng.name} onChange={e=>setNg(g=>({...g,name:e.target.value}))} placeholder="Down payment…" /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Target Amount ($)</label>
-          <input type="number" min="0" value={ng.targetAmount} onChange={e=>setNg(g=>({...g,targetAmount:e.target.value}))} /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Target Date</label>
-          <input type="date" value={ng.targetDate} onChange={e=>setNg(g=>({...g,targetDate:e.target.value}))} /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Already Saved ($)</label>
-          <input type="number" min="0" value={ng.currentSaved} onChange={e=>setNg(g=>({...g,currentSaved:e.target.value}))} /></div>
-        <div className="form-group" style={{marginBottom:0}}><label>Priority</label>
-          <select value={ng.priority} onChange={e=>setNg(g=>({...g,priority:e.target.value}))}>
-            <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
-      </div>
-      <button className="btn btn-primary btn-sm mb-4" onClick={()=>{ if(!ng.name||!ng.targetDate) return; setGoals(g=>[...g,{...ng,targetAmount:+ng.targetAmount,currentSaved:+ng.currentSaved}]); setNg({name:'',targetAmount:0,targetDate:'',currentSaved:0,priority:'medium'}); }}>+ Add Goal</button>
-      {goals.length>0 && <table><thead><tr><th>Goal</th><th>Target</th><th>Date</th><th></th></tr></thead>
-        <tbody>{goals.map((g,i)=><tr key={i}><td className="bold">{g.name}</td><td>{fmtFull(g.targetAmount)}</td><td>{fmtDate(g.targetDate)}</td><td><button className="btn btn-danger btn-sm" onClick={()=>setGoals(arr=>arr.filter((_,j)=>j!==i))}>×</button></td></tr>)}</tbody></table>}
-    </div>
-  );
-
-  const steps = [renderProfile, renderAssets, renderLiabilities, renderCash, renderGoals];
-  const canNext = () => step===0 ? profile.name.trim().length>0 : true;
-
   return (
     <div className="wizard-wrap">
       <div className="wizard-box">
         <div className="wizard-title">Welcome to FinPal</div>
-        <div className="wizard-sub">Set up your financial profile. You can add more data any time from the app.</div>
-        <div className="progress-dots">
-          {STEPS.map((s,i)=><div key={s} className={`dot ${i<step?'done':i===step?'active':''}`} title={s} />)}
-        </div>
-        <div className="section-title" style={{marginBottom:20}}>{STEPS[step]}</div>
+        <div className="wizard-sub">Tell us a bit about yourself to personalise your experience. You can add your assets, debts, and goals from the app after setup.</div>
         {error && <div className="auth-error mb-4">{error}</div>}
-        {steps[step]()}
-        <div className="flex justify-between mt-4" style={{marginTop:24}}>
-          <button className="btn btn-secondary" onClick={()=>setStep(s=>Math.max(0,s-1))} disabled={step===0||saving}>Back</button>
-          {step > 0 && step < STEPS.length - 1 && (
-            <button type="button" className="btn btn-secondary" style={{color:'#4a5568',fontSize:12}} onClick={()=>setStep(s=>s+1)}>
-              Skip for now
-            </button>
-          )}
-          {step<STEPS.length-1
-            ? <button className="btn btn-primary" onClick={()=>setStep(s=>s+1)} disabled={!canNext()}>Next →</button>
-            : <button className="btn btn-success btn-lg" onClick={finish} disabled={saving}>
-                {saving?'Saving…':'Launch FinPal →'}
-              </button>
-          }
+        {renderProfile()}
+        <div style={{marginTop:24,textAlign:'right'}}>
+          <button className="btn btn-success btn-lg" onClick={finish} disabled={saving||!profile.name.trim()}>
+            {saving?'Saving…':'Launch FinPal →'}
+          </button>
         </div>
       </div>
     </div>
@@ -993,7 +869,7 @@ const CRYPTO_IDS = {
 // Shared "Add Asset" panel used by PortfolioTab and SetupWizard
 // Includes manual form + "Describe holdings" AI shortcut
 function AddAssetPanel({ newAsset, setNewAsset, addAsset, addErr, apiKey, onParsed, compact }) {
-  const [showDescribe, setShowDescribe] = useState(false);
+  const [showDescribe, setShowDescribe] = useState(true);
   const [describeText, setDescribeText] = useState('');
   const [describeErr, setDescribeErr] = useState('');
   const [descParsing, setDescParsing] = useState(false);
@@ -1034,28 +910,44 @@ function AddAssetPanel({ newAsset, setNewAsset, addAsset, addErr, apiKey, onPars
 
       {showDescribe ? (
         <div>
-          <div className="form-group">
-            <label>Describe your holdings in plain English</label>
-            <textarea value={describeText} onChange={e=>setDescribeText(e.target.value)} rows={4}
-              placeholder={'e.g. "100 AAPL at $150 in taxable, 50 MSFT at $320 in my IRA, 2 BTC"'}
-              style={{width:'100%',background:'#0f1117',border:'1px solid #2d3748',color:'#e2e8f0',borderRadius:6,padding:8,fontSize:13,fontFamily:'inherit'}} />
-          </div>
-          {describeErr && <div style={{fontSize:12,color:'#fc8181',marginBottom:8}}>{describeErr}</div>}
-          <button className="btn btn-primary" onClick={parseDescription} disabled={descParsing}>
-            {descParsing ? 'Parsing…' : 'Parse with AI'}
-          </button>
+          {!apiKey ? (
+            <div style={{background:'#1a1f2e',border:'1px solid #3182ce',borderRadius:8,padding:'14px 16px',display:'flex',gap:12,alignItems:'center'}}>
+              <div style={{fontSize:20}}>🔑</div>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Anthropic API key required</div>
+                <div style={{fontSize:12,color:'#a0aec0',lineHeight:1.6}}>Add your key in <strong style={{color:'#63b3ed'}}>Settings</strong> to describe your holdings in plain English and have AI parse them automatically.</div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="form-group">
+                <label>Describe your holdings in plain English</label>
+                <textarea value={describeText} onChange={e=>setDescribeText(e.target.value)} rows={4}
+                  placeholder={'e.g. "100 AAPL at $150 in taxable, 50 MSFT at $320 in my IRA, 2 BTC"'}
+                  style={{width:'100%',background:'#0f1117',border:'1px solid #2d3748',color:'#e2e8f0',borderRadius:6,padding:8,fontSize:13,fontFamily:'inherit'}} />
+              </div>
+              {describeErr && <div style={{fontSize:12,color:'#fc8181',marginBottom:8}}>{describeErr}</div>}
+              <button className="btn btn-primary" onClick={parseDescription} disabled={descParsing}>
+                {descParsing ? 'Parsing…' : 'Parse with AI'}
+              </button>
+            </div>
+          )}
           {parsedItems.length > 0 && (
             <div style={{marginTop:12}}>
-              <div style={{fontSize:12,color:'#a0aec0',marginBottom:6}}>Parsed — click to load into form:</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{fontSize:12,color:'#a0aec0'}}>{parsedItems.length} holding{parsedItems.length>1?'s':''} found</div>
+                <button className="btn btn-success btn-sm" onClick={()=>{ if(onParsed) onParsed(parsedItems); setParsedItems([]); setDescribeText(''); setShowDescribe(false); }}>
+                  Add all {parsedItems.length > 1 ? `(${parsedItems.length})` : ''}
+                </button>
+              </div>
               {parsedItems.map((item, i) => (
-                <div key={i} onClick={()=>applyParsed(item)}
-                  style={{display:'flex',gap:12,alignItems:'center',padding:'6px 10px',cursor:'pointer',
+                <div key={i} style={{display:'flex',gap:12,alignItems:'center',padding:'6px 10px',
                     border:'1px solid #2d3748',borderRadius:6,marginBottom:4,background:'#0f1117',
                     fontSize:12,color:'#e2e8f0'}}>
                   <span className="bold" style={{width:60}}>{item.ticker}</span>
-                  <span className="gray">{item.shares} shares @ ${item.costBasis}</span>
+                  <span className="gray">{item.shares} shares{item.costBasis ? ` @ $${item.costBasis}` : ''}</span>
                   <span className="badge b-blue">{item.accountType}</span>
-                  <span style={{marginLeft:'auto',color:'#63b3ed'}}>→ Load</span>
+                  <button className="btn btn-danger btn-sm" style={{marginLeft:'auto',padding:'2px 8px'}} onClick={()=>setParsedItems(arr=>arr.filter((_,j)=>j!==i))}>×</button>
                 </div>
               ))}
             </div>
@@ -1225,9 +1117,18 @@ function PortfolioTab({ state, dispatch }) {
           newAsset={newAsset} setNewAsset={setNewAsset}
           addAsset={addAsset} addErr={addErr}
           apiKey={apiKeys.anthropic}
-          onParsed={items => {
-            // Queue parsed assets — user confirms each in the form
-            if (items.length > 0) setNewAsset({...items[0], purchaseDate: items[0].purchaseDate||''});
+          onParsed={async items => {
+            for (const item of items) {
+              try {
+                const saved = await apiPost('/api/assets', {
+                  ...item, ticker: item.ticker.toUpperCase(),
+                  shares: +item.shares, costBasis: +item.costBasis,
+                  purchaseDate: item.purchaseDate || null,
+                });
+                dispatch({ type:'ADD_ASSET', item:saved });
+              } catch(e) { setAddErr(e.message); break; }
+            }
+            setShowAdd(false);
           }}
         />
       )}
