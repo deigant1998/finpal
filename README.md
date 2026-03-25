@@ -140,19 +140,21 @@ DATA_DIR=/data SESSION_SECRET=<random> npm start
 
 ## Screenshots
 
-<img width="1437" height="766" alt="image" src="https://github.com/user-attachments/assets/d17d80ee-d76a-4cd5-9fc8-b0d63556a0e1" />
+<img width="1440" height="769" alt="image" src="https://github.com/user-attachments/assets/80b77786-05ef-4a8b-bc46-80ef878baaf9" />
 
-<img width="1440" height="735" alt="image" src="https://github.com/user-attachments/assets/fd8322d2-421d-433e-a777-5dda179cd2c6" />
+<img width="1440" height="766" alt="image" src="https://github.com/user-attachments/assets/5b60a814-c6e5-4d29-af87-85d8df76a95a" />
 
-<img width="1439" height="766" alt="image" src="https://github.com/user-attachments/assets/f22c99af-7efa-4b89-9b94-24b9d9292544" />
+<img width="1440" height="769" alt="image" src="https://github.com/user-attachments/assets/5c9ea67f-be8e-48b5-93e2-fe8d1b92e95d" />
 
-<img width="1440" height="761" alt="image" src="https://github.com/user-attachments/assets/84ca8576-109f-41b2-a015-c39d688e8731" />
+<img width="1440" height="771" alt="image" src="https://github.com/user-attachments/assets/b93cc499-ccaa-4529-899b-8744f01ff88b" />
 
-<img width="1440" height="707" alt="image" src="https://github.com/user-attachments/assets/2b991117-fe64-45fc-957d-1fdab177aa0e" />
+<img width="1439" height="765" alt="image" src="https://github.com/user-attachments/assets/6559e7f4-769b-40db-b37a-ad0999a8cdb4" />
 
-<img width="1440" height="756" alt="image" src="https://github.com/user-attachments/assets/27af76e3-8c06-4355-adc6-135bbbafc82b" />
+<img width="1440" height="662" alt="image" src="https://github.com/user-attachments/assets/631386af-9e03-4b07-9c34-78b6f3d13f11" />
 
-<img width="1440" height="710" alt="image" src="https://github.com/user-attachments/assets/cdbd1a39-1f7e-4357-b26b-0d6e1a29ffac" />
+<img width="1440" height="547" alt="image" src="https://github.com/user-attachments/assets/67996a91-2bc2-40cb-a3b6-578b6b4ffe86" />
+
+
 
 Note: This project is for educational purposes only.
 
