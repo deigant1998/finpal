@@ -1726,7 +1726,8 @@ function BudgetTab({ state }) {
   const annualIncome = +(profile.annualIncome || profile.annual_income || 0);
   const grossMonthly = Math.round(annualIncome / 12);
 
-  const estimateTax = (annual) => {
+  // Federal income tax (2024 brackets, standard deduction already baked in via bracket widths)
+  const estimateFederalTax = (annual) => {
     if (!annual) return 0;
     const brackets = [[11600,0.10],[35550,0.12],[53375,0.22],[91425,0.24],[51775,0.32],[365625,0.35],[1e9,0.37]];
     let tax = 0, rem = annual;
@@ -1735,6 +1736,14 @@ function BudgetTab({ state }) {
       if (rem <= 0) break;
     }
     return Math.round(tax);
+  };
+  // FICA: Social Security 6.2% (wage base $168,600) + Medicare 1.45% + 0.9% additional over $200k
+  const estimateFICA = (annual) => {
+    if (!annual) return 0;
+    const ss        = Math.min(annual, 168600) * 0.062;
+    const medicare  = annual * 0.0145;
+    const addlMed   = Math.max(0, annual - 200000) * 0.009;
+    return Math.round(ss + medicare + addlMed);
   };
 
   // Load persisted budget from localStorage
@@ -1747,15 +1756,19 @@ function BudgetTab({ state }) {
   const [transport, setTransport] = useState(saved.transport  ?? Math.round(grossMonthly * 0.10));
   const [food,      setFood]      = useState(saved.food       ?? Math.round(grossMonthly * 0.12));
   const [other,     setOther]     = useState(saved.other      ?? Math.round(grossMonthly * 0.08));
-  const [goalSavings, setGoalSavings] = useState(saved.goalSavings ?? Math.round(grossMonthly * 0.05));
-  const [taxOverride, setTaxOverride] = useState(saved.taxOverride ?? null); // null = auto
+  const [goalSavings,   setGoalSavings]   = useState(saved.goalSavings   ?? Math.round(grossMonthly * 0.05));
+  const [taxOverride,   setTaxOverride]   = useState(saved.taxOverride   ?? null); // null = auto
+  const [stateTaxRate,  setStateTaxRate]  = useState(saved.stateTaxRate  ?? 5);   // % of gross, e.g. CA≈9, TX≈0
 
   // Persist on change
   useEffect(() => {
-    localStorage.setItem('finpal_budget', JSON.stringify({ housing, transport, food, other, goalSavings, taxOverride }));
-  }, [housing, transport, food, other, goalSavings, taxOverride]);
+    localStorage.setItem('finpal_budget', JSON.stringify({ housing, transport, food, other, goalSavings, taxOverride, stateTaxRate }));
+  }, [housing, transport, food, other, goalSavings, taxOverride, stateTaxRate]);
 
-  const autoTax    = estimateTax(annualIncome);
+  const federalTaxAnnual = estimateFederalTax(annualIncome);
+  const ficaAnnual       = estimateFICA(annualIncome);
+  const stateTaxAnnual   = Math.round(annualIncome * stateTaxRate / 100);
+  const autoTax          = federalTaxAnnual + ficaAnnual + stateTaxAnnual;
   const monthlyTax = Math.round((taxOverride !== null ? taxOverride : autoTax) / 12);
   const takeHome   = grossMonthly - monthlyTax;
   const totalExp   = housing + transport + food + other;
@@ -1844,22 +1857,44 @@ function BudgetTab({ state }) {
           </div>
 
           {/* Tax */}
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
-            <div>
-              <span style={{fontSize:14,color:'#a0aec0'}}>− Est. taxes</span>
-              <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>
-                {taxOverride !== null
-                  ? <button style={{fontSize:10,color:'#63b3ed',background:'none',border:'none',cursor:'pointer',padding:0}} onClick={()=>setTaxOverride(null)}>reset to auto</button>
-                  : `~${annualIncome>0?(autoTax/annualIncome*100).toFixed(0):0}% effective`}
-              </span>
+          <div style={{padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <span style={{fontSize:14,color:'#a0aec0'}}>− Est. taxes</span>
+                <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>
+                  {taxOverride !== null
+                    ? <button style={{fontSize:10,color:'#63b3ed',background:'none',border:'none',cursor:'pointer',padding:0}} onClick={()=>setTaxOverride(null)}>reset to auto</button>
+                    : `~${annualIncome>0?(autoTax/annualIncome*100).toFixed(0):0}% effective`}
+                </span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:13,color:'#718096'}}>$</span>
+                <input type="number" min="0" value={taxOverride !== null ? Math.round(taxOverride/12) : monthlyTax}
+                  onChange={e=>setTaxOverride(Math.max(0,+e.target.value)*12)}
+                  style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
+                <span style={{fontSize:13,color:'#718096'}}>/mo</span>
+              </div>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <span style={{fontSize:13,color:'#718096'}}>$</span>
-              <input type="number" min="0" value={taxOverride !== null ? Math.round(taxOverride/12) : monthlyTax}
-                onChange={e=>setTaxOverride(Math.max(0,+e.target.value)*12)}
-                style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
-              <span style={{fontSize:13,color:'#718096'}}>/mo</span>
-            </div>
+            {/* Breakdown — only shown when auto */}
+            {taxOverride === null && annualIncome > 0 && (
+              <div style={{display:'flex',flexWrap:'wrap',gap:'6px 18px',marginTop:6,paddingLeft:8}}>
+                <span style={{fontSize:11,color:'#4a5568'}}>
+                  Federal: {fmtFull(Math.round(federalTaxAnnual/12))}/mo
+                  <span style={{color:'#2d3748',marginLeft:4}}>({(federalTaxAnnual/annualIncome*100).toFixed(1)}%)</span>
+                </span>
+                <span style={{fontSize:11,color:'#4a5568'}}>
+                  FICA: {fmtFull(Math.round(ficaAnnual/12))}/mo
+                  <span style={{color:'#2d3748',marginLeft:4}}>(SS + Medicare)</span>
+                </span>
+                <span style={{fontSize:11,color:'#4a5568',display:'flex',alignItems:'center',gap:4}}>
+                  State:
+                  <input type="number" min="0" max="20" step="0.5" value={stateTaxRate}
+                    onChange={e=>setStateTaxRate(Math.max(0,Math.min(20,+e.target.value)))}
+                    style={{width:38,fontSize:11,padding:'1px 3px',textAlign:'right'}} />%
+                  <span style={{color:'#2d3748'}}>= {fmtFull(Math.round(stateTaxAnnual/12))}/mo</span>
+                </span>
+              </div>
+            )}
           </div>
 
           {totalRow('Take-home', takeHome)}
@@ -2443,10 +2478,17 @@ function ModelsTab({ state }) {
     ? Math.round(budgetData.taxOverride / 12)
     : (() => {
         const a = +(profile.annualIncome||0);
+        if (!a) return 0;
+        // Federal
         const brackets = [[11600,0.10],[35550,0.12],[53375,0.22],[91425,0.24],[51775,0.32],[365625,0.35],[1e9,0.37]];
-        let tax=0, rem=a;
-        for (const [size,rate] of brackets){const t=Math.min(rem,size);tax+=t*rate;rem-=t;if(rem<=0)break;}
-        return Math.round(tax/12);
+        let fed=0, rem=a;
+        for (const [size,rate] of brackets){const t=Math.min(rem,size);fed+=t*rate;rem-=t;if(rem<=0)break;}
+        // FICA
+        const fica = Math.min(a,168600)*0.062 + a*0.0145 + Math.max(0,a-200000)*0.009;
+        // State (from localStorage)
+        const sr = +(budgetData.stateTaxRate ?? 5);
+        const state = a * sr / 100;
+        return Math.round((fed + fica + state) / 12);
       })();
   const housing    = budgetData.housing    ?? Math.round(grossMonthly * 0.30);
   const transport  = budgetData.transport  ?? Math.round(grossMonthly * 0.10);
