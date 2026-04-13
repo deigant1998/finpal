@@ -7,9 +7,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "electron": "electron .",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build:mac": "electron-builder --mac --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:linux": "electron-builder --linux --publish never"
   },
   "engines": {
     "node": ">=18.0.0"
