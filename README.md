@@ -1,26 +1,37 @@
 # FinPal
 
-A local-first personal finance dashboard. Track your net worth, investments, debts, and goals — with AI-powered analysis and real market data. AI analysis is powered by Anthropic (and is opt-in) - the data might be processed as per Anthropic's data handling policy.
+A local-first personal finance dashboard. Track your net worth, investments, debts, budget, and goals — with AI-powered analysis and real market data. AI analysis is powered by Anthropic (opt-in) — data may be processed per Anthropic's data handling policy.
 
 ## Features
 
-- **Net Worth tracking** — assets, liabilities, cash accounts, snapshots over time
-- **Portfolio management** — stocks, crypto, and other holdings with lot-level cost basis tracking
-- **Live prices** — Finnhub (stocks/ETFs, 60 req/min) and CoinGecko (crypto) via server-side proxy
-- **AI Agents** — five specialist advisors (budget, investments, debt, tax, macro) plus synthesis, powered by Claude
-- **AI Chat** — ask follow-up questions about your finances with full context
-- **Market tab** — FRED macro indicators, stock news via Finnhub
-- **Goals tracker** — savings and payoff goals with progress bars
-- **Tax bracket calculator** — marginal rate derived from income + filing status (2024 IRS brackets)
-- **Multi-user** — each account is isolated with its own data
-- **Persistent caching** — market data, agent results, and chat history survive page refreshes
+- **Net Worth** — assets, liabilities, cash accounts, monthly snapshots, 10-year projection
+- **Portfolio** — stocks, ETFs, crypto with lot-level cost basis; live prices via Finnhub/CoinGecko; manual price entry if no API key; macro indicators and stock news in the same tab
+- **Debt** — track balances, APR, minimum payments; avalanche payoff simulation; payoff timeline
+- **Budget** — monthly cash flow cascade: gross income → taxes → expenses → debt → goals → investable; 50/30/20 benchmark; goal savings auto-capped at what goals actually need so surplus flows to investable
+- **Goals** — urgency-weighted allocation across goals from your budget; projected completion dates; on-time/late status; inline editing
+- **Models (Monte Carlo)** — retirement simulation with 1,000 random market scenarios; career promotion milestones (multiplicative salary jumps); debt payoff and goal completion as automatic cashflow boosts; wired to live app data (net worth, investable/mo from Budget tab)
+- **AI Agents** — six specialist advisors (portfolio, debt, tax, retirement, risk, macro) that run as a single health check and produce A–F grades with specific actions
+- **AI Chat** — ask follow-up questions with full financial context injected
+
+## Tabs
+
+| Tab | What it does |
+|-----|-------------|
+| Net Worth | Overall wealth snapshot, allocation charts, history, liabilities breakdown |
+| Portfolio | Holdings table, live prices, macro indicators, stock news |
+| Debt | Debt list, avalanche payoff simulation |
+| Budget | Income cascade, expense inputs, investable calculation |
+| Goals | Goal cards with urgency-weighted budget allocation and projections |
+| Models | Monte Carlo retirement simulation with career + financial milestones |
+| AI Agents | Full financial health check across six specialist agents |
 
 ## Stack
 
 - **Backend**: Node.js + Express, SQLite via `better-sqlite3`
-- **Frontend**: Single-file React app (Babel Standalone, no build step)
+- **Frontend**: Single-file React 18 app (Babel Standalone, no build step)
 - **Auth**: Session-based with bcrypt password hashing
 - **AI**: Anthropic Claude API (bring your own key)
+- **Charts**: Recharts
 
 ## Quick Start
 
@@ -51,12 +62,14 @@ cp .env.example .env
 
 All keys are stored per-user in the database (never in source). Add them in **Settings** after logging in:
 
-| Key            | Used for                                  | Free tier                        |
-|----------------|-------------------------------------------|----------------------------------|
-| Anthropic      | AI agents + chat                          | Pay-per-use                      |
-| Finnhub        | Stock/ETF prices + news                   | 60 req/min, no daily cap         |
-| CoinGecko      | Crypto prices                             | Free (no key needed)             |
-| FRED           | Macro indicators (rates, inflation, etc.) | Free                             |
+| Key        | Used for                                  | Free tier                |
+|------------|-------------------------------------------|--------------------------|
+| Anthropic  | AI agents + chat                          | Pay-per-use              |
+| Finnhub    | Stock/ETF prices + news                   | 60 req/min, no daily cap |
+| CoinGecko  | Crypto prices                             | Free (no key needed)     |
+| FRED       | Macro indicators (rates, inflation, etc.) | Free                     |
+
+Finnhub and FRED are optional — the app works without them. Portfolio prices fall back to cost basis, and you can enter current prices manually in the Portfolio edit row.
 
 ## Project Structure
 
@@ -66,6 +79,7 @@ finpal/
 ├── db.js           # SQLite schema + all database functions
 ├── public/
 │   └── index.html  # Entire React frontend (single file, no build)
+├── electron/       # Electron wrapper for desktop builds
 ├── .env.example    # Environment variable template
 └── data/           # SQLite databases (gitignored)
 ```
@@ -74,69 +88,64 @@ finpal/
 
 FinPal uses two SQLite files, both stored in `DATA_DIR` (`./data` by default):
 
-| File           | Purpose                                      |
-|----------------|----------------------------------------------|
-| `finpal.db`    | All user data — accounts, assets, portfolios |
-| `sessions.db`  | Express session store                        |
+| File          | Purpose                                      |
+|---------------|----------------------------------------------|
+| `finpal.db`   | All user data — accounts, assets, portfolios |
+| `sessions.db` | Express session store                        |
 
-The directory and both files are created automatically on first run. They are gitignored — never commit them.
+Both files are created automatically on first run and are gitignored.
 
 ### Schema overview
 
-| Table          | Contents                                              |
-|----------------|-------------------------------------------------------|
-| `users`        | Accounts, profile (income, age, risk tolerance, etc.) |
-| `api_keys`     | Per-user API keys (Anthropic, Finnhub, FRED)          |
-| `assets`       | Holdings with weighted-average cost basis             |
-| `asset_lots`   | Individual purchase lots per asset                    |
-| `liabilities`  | Debts with APR and minimum payment                    |
-| `cash_accounts`| Cash/savings accounts with APY                        |
-| `goals`        | Financial goals with target amount and date           |
-| `snapshots`    | Monthly net worth snapshots for trend tracking        |
-| `agent_cache`  | Saved AI agent results and chat history               |
-| `market_cache` | Cached market/macro data (prices, news, FRED)         |
+| Table           | Contents                                              |
+|-----------------|-------------------------------------------------------|
+| `users`         | Accounts, profile (income, age, risk tolerance, etc.) |
+| `api_keys`      | Per-user API keys (Anthropic, Finnhub, FRED)          |
+| `assets`        | Holdings with weighted-average cost basis             |
+| `asset_lots`    | Individual purchase lots per asset                    |
+| `liabilities`   | Debts with APR and minimum payment                    |
+| `cash_accounts` | Cash/savings accounts with APY                        |
+| `goals`         | Financial goals with target amount and date           |
+| `snapshots`     | Monthly net worth snapshots for trend tracking        |
+| `agent_cache`   | Saved AI agent results and chat history               |
+| `market_cache`  | Cached market/macro data (prices, news, FRED)         |
 
-### Migrations
-
-Schema changes are applied automatically at startup via `CREATE TABLE IF NOT EXISTS` and idempotent `ALTER TABLE` statements in `db.js`. No manual migration step is needed.
+Schema changes are applied automatically at startup via idempotent `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE` statements — no manual migration step needed.
 
 ### Backup
 
-Copy `finpal.db` — that's your entire dataset. For automated backups on Linux/macOS:
-
 ```bash
-# Daily backup to ~/finpal-backups/
-0 2 * * * cp /path/to/data/finpal.db ~/finpal-backups/finpal-$(date +%Y%m%d).db
+cp data/finpal.db ~/finpal-backup.db
 ```
 
 ### Resetting data
-
-To wipe everything and start fresh:
 
 ```bash
 rm data/finpal.db data/sessions.db
 npm start   # recreates both files automatically
 ```
 
-To remove a single user's data, delete their row from the `users` table — cascading deletes handle the rest:
-
-```bash
-sqlite3 data/finpal.db "DELETE FROM users WHERE username = 'alice';"
-```
-
-### Production notes
-
-- **WAL mode** is enabled by default — safe for concurrent reads with a single writer
-- **Foreign keys** are enforced — cascading deletes keep data consistent
-- SQLite is suitable for single-server personal use. If you need multi-server or high concurrency, swap `db.js` for a Postgres adapter
-
 ## Deployment
 
-The app runs anywhere Node.js is available. For platforms with persistent storage (Render, Railway, Fly.io), set `DATA_DIR` to a mounted volume path so the SQLite databases survive deploys.
+The app runs anywhere Node.js is available. Set `DATA_DIR` to a mounted volume path so the SQLite databases survive deploys:
 
 ```bash
 DATA_DIR=/data SESSION_SECRET=<random> npm start
 ```
+
+## Desktop App (Electron)
+
+Pre-built installers are produced by GitHub Actions on every push to `master`. Download from the Actions tab → latest build → Artifacts.
+
+To build locally:
+
+```bash
+npm run build:mac    # macOS DMG
+npm run build:win    # Windows NSIS installer
+npm run build:linux  # Linux AppImage
+```
+
+Note: installers are unsigned. macOS will show a Gatekeeper warning — right-click → Open to bypass.
 
 ## Screenshots
 
@@ -156,12 +165,6 @@ DATA_DIR=/data SESSION_SECRET=<random> npm start
 
 <img width="1440" height="547" alt="image" src="https://github.com/user-attachments/assets/67996a91-2bc2-40cb-a3b6-578b6b4ffe86" />
 
-
+---
 
 Note: This project is for educational purposes only.
-
-
-
-
-
-
