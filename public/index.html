@@ -135,12 +135,12 @@ if (typeof Recharts === 'undefined') {
 }
 
 const { ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-        LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+        LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } = Recharts;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const MODEL      = 'claude-sonnet-4-6';
 const PIE_COLORS = ['#3182ce','#68d391','#f6ad55','#fc8181','#b794f4','#4fd1c5','#f687b3','#a0aec0'];
-const TABS       = ['Net Worth','Portfolio','Debt','Goals','Models','Market','AI Agents'];
+const TABS       = ['Net Worth','Portfolio','Debt','Budget','Goals','Models','AI Agents'];
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -287,28 +287,49 @@ function RenderedText({ text }) {
 
 // ─── Financial models ─────────────────────────────────────────────────────────
 
+// milestones: [{ age, salaryChangePct }] — sorted ascending by age
+// colaRate: annual savings contribution growth rate between milestones (e.g. 0.02 = contributions grow 2%/yr)
 function runMonteCarlo({ currentAge, retirementAge, currentSavings, monthlyContribution,
+                         milestones=[], cashflowBoosts=[], colaRate=0.02,
                          annualReturnMean=0.07, annualReturnStd=0.15, runs=1000 }) {
   const years = Math.max(1, retirementAge - currentAge);
+  const sorted = [...milestones].sort((a, b) => a.age - b.age);
+
+  // Precompute per-year contribution:
+  //   base × COLA × career-milestone multipliers  (salary-linked, multiplicative)
+  //   + cashflow boosts that unlock at each age    (debt payoff / goal funded, additive)
+  const annualContribs = Array.from({ length: years }, (_, y) => {
+    const age = currentAge + y;
+    let mult = Math.pow(1 + colaRate, y);
+    for (const m of sorted) {
+      if (m.age <= age) mult *= (1 + m.salaryChangePct / 100);
+    }
+    const boost = cashflowBoosts.filter(b => b.age <= age).reduce((s, b) => s + b.amount, 0);
+    return monthlyContribution * mult + boost; // monthly total
+  });
+
   const results = new Array(runs);
-  for (let r=0; r<runs; r++) {
+  for (let r = 0; r < runs; r++) {
     let bal = currentSavings;
-    for (let y=0; y<years; y++) {
-      const u1 = Math.random()||1e-10, u2 = Math.random();
-      const z = Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
-      bal = bal*(1+annualReturnMean+annualReturnStd*z) + monthlyContribution*12;
-      if (bal<0) bal=0;
+    for (let y = 0; y < years; y++) {
+      const u1 = Math.random() || 1e-10, u2 = Math.random();
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      bal = bal * (1 + annualReturnMean + annualReturnStd * z) + annualContribs[y] * 12;
+      if (bal < 0) bal = 0;
     }
     results[r] = bal;
   }
-  results.sort((a,b)=>a-b);
-  const p = pct => results[Math.min(runs-1, Math.floor(pct/100*runs))];
+  results.sort((a, b) => a - b);
+  const p = pct => results[Math.min(runs - 1, Math.floor(pct / 100 * runs))];
+
+  // Deterministic median path for chart
   let bal = currentSavings;
-  const chartData = Array.from({length:years+1},(_,y)=>{
-    if (y>0) bal = bal*(1+annualReturnMean)+monthlyContribution*12;
-    return { year:currentAge+y, median:Math.round(bal) };
+  const chartData = Array.from({ length: years + 1 }, (_, y) => {
+    if (y > 0) bal = bal * (1 + annualReturnMean) + annualContribs[y - 1] * 12;
+    return { year: currentAge + y, median: Math.round(bal) };
   });
-  return { p10:p(10), p25:p(25), p50:p(50), p75:p(75), p90:p(90), chartData, annualIncome4pct:p(50)*0.04 };
+
+  return { p10: p(10), p25: p(25), p50: p(50), p75: p(75), p90: p(90), chartData, annualIncome4pct: p(50) * 0.04 };
 }
 
 // ─── Tax bracket lookup (2024 IRS rates) ─────────────────────────────────────
@@ -853,6 +874,38 @@ function NetWorthTab({ state, dispatch }) {
           </table>
         )}
       </div>
+
+      <div className="card" style={{marginTop:16}}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>Liabilities</div>
+          <button className="btn btn-sm" style={{background:'#2d3748',color:'#a0aec0'}}
+            onClick={()=>dispatch({type:'SET_TAB',tab:'Debt'})}>Manage in Debt tab →</button>
+        </div>
+        {liabilities.length === 0 ? (
+          <div className="gray tc" style={{padding:'20px 0',fontSize:13}}>No liabilities added — go to the Debt tab to add debts</div>
+        ) : (
+          <>
+            <table>
+              <thead><tr><th>Name</th><th>Type</th><th>Balance</th><th>APR</th><th>Min/mo</th></tr></thead>
+              <tbody>
+                {[...liabilities].sort((a,b)=>b.balance-a.balance).map(l=>(
+                  <tr key={l.id}>
+                    <td className="bold">{l.name}</td>
+                    <td style={{color:'#a0aec0',fontSize:12}}>{l.type}</td>
+                    <td style={{color:'#fc8181'}}>{fmtFull(l.balance)}</td>
+                    <td>{l.apr}%</td>
+                    <td>{fmtFull(l.minPayment)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #2d3748',display:'flex',justifyContent:'space-between',fontSize:13}}>
+              <span style={{color:'#a0aec0'}}>Total liabilities</span>
+              <span style={{color:'#fc8181',fontWeight:600}}>{fmtFull(debtValue)}</span>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -984,9 +1037,48 @@ function AddAssetPanel({ newAsset, setNewAsset, addAsset, addErr, apiKey, onPars
 }
 
 function PortfolioTab({ state, dispatch }) {
-  const { assets, livePrices, pricesFetching, pricesFetched, apiKeys } = state;
+  const { assets, livePrices, pricesFetching, pricesFetched, apiKeys, news, macro, newsFetchedAt, macroFetchedAt } = state;
   const [fetchError, setFetchError] = useState('');
   const [editId, setEditId] = useState(null);
+  const [mktLoading, setMktLoading] = useState({ news:false, macro:false });
+
+  const FRED_SERIES = [
+    { id:'FEDFUNDS', label:'Fed Funds Rate', unit:'%' },
+    { id:'CPIAUCSL', label:'CPI (Inflation)', unit:' index' },
+    { id:'UNRATE',   label:'Unemployment Rate', unit:'%' },
+    { id:'DGS10',    label:'10-Year Treasury', unit:'%' },
+  ];
+
+  const fetchNewsData = useCallback(async () => {
+    if (!apiKeys.finnhub) return;
+    setMktLoading(l=>({...l,news:true}));
+    const results = {}, errs = {};
+    for (const a of assets.filter(a=>a.assetType!=='crypto'&&a.assetType!=='other').slice(0,8)) {
+      try { results[a.ticker] = await fetchFinnhubNews(a.ticker); await sleep(300); }
+      catch(e) { errs[a.ticker] = e.message; }
+    }
+    const now = new Date().toISOString();
+    dispatch({ type:'SET_NEWS', data: results, fetchedAt: now });
+    apiPost('/api/market-cache', { type: 'news', data: results }).catch(() => {});
+    setMktLoading(l=>({...l,news:false}));
+  }, [assets, apiKeys.finnhub, dispatch]);
+
+  const fetchMacroData = useCallback(async () => {
+    if (!apiKeys.fred) return;
+    setMktLoading(l=>({...l,macro:true}));
+    const results = {};
+    for (const s of FRED_SERIES) {
+      try {
+        const data = await fetchFRED(s.id);
+        results[s.id] = data.slice(0,12).reverse();
+      } catch(e) {}
+      await sleep(200);
+    }
+    const now = new Date().toISOString();
+    dispatch({ type:'SET_MACRO', data: results, fetchedAt: now });
+    apiPost('/api/market-cache', { type: 'macro', data: results }).catch(() => {});
+    setMktLoading(l=>({...l,macro:false}));
+  }, [apiKeys.fred, dispatch]);
   const [editData, setEditData] = useState({});
   const [showAdd, setShowAdd] = useState(false);
   const [newAsset, setNewAsset] = useState({ ticker:'', name:'', shares:1, costBasis:0, accountType:'taxable', assetType:'stock', purchaseDate:'' });
@@ -1078,13 +1170,23 @@ function PortfolioTab({ state, dispatch }) {
     } catch(e) { setAddErr(e.message); }
   };
 
-  const startEdit = a => { setEditId(a.id); setEditData({ shares:a.shares, costBasis:a.costBasis, accountType:a.accountType, assetType:a.assetType||'stock' }); };
+  const startEdit = a => {
+    const lp = livePrices[a.ticker];
+    setEditId(a.id);
+    setEditData({ shares:a.shares, costBasis:a.costBasis, accountType:a.accountType, assetType:a.assetType||'stock',
+      manualPrice: lp ? lp.price : '' });
+  };
   const saveEdit = async (id) => {
     try {
       const updated = await apiPut(`/api/assets/${id}`, {
         shares:+editData.shares, costBasis:+editData.costBasis, accountType:editData.accountType, assetType:editData.assetType,
       });
       dispatch({ type:'UPDATE_ASSET', id, data:updated });
+      // Persist manual price into livePrices so value/gain calculations use it
+      if (editData.manualPrice !== '' && +editData.manualPrice > 0) {
+        const ticker = updated.ticker || updated.Ticker;
+        dispatch({ type:'SET_PRICES', prices: { ...livePrices, [ticker]: { price: +editData.manualPrice, changePct: null } } });
+      }
     } catch(e) {}
     setEditId(null);
   };
@@ -1165,6 +1267,11 @@ function PortfolioTab({ state, dispatch }) {
                   <td colSpan="2">
                     <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Cost/Share $</div>
                     <input type="number" step="any" value={editData.costBasis} onChange={e=>setEditData(d=>({...d,costBasis:e.target.value}))} style={{width:100}} />
+                  </td>
+                  <td>
+                    <div style={{fontSize:10,color:'#718096',marginBottom:2}}>Current Price $ <span style={{color:'#4a5568'}}>(optional)</span></div>
+                    <input type="number" step="any" placeholder="auto" value={editData.manualPrice}
+                      onChange={e=>setEditData(d=>({...d,manualPrice:e.target.value}))} style={{width:100}} />
                   </td>
                   <td><select value={editData.accountType} onChange={e=>setEditData(d=>({...d,accountType:e.target.value}))} style={{width:90}}>
                     <option value="taxable">Taxable</option><option value="ira">IRA</option>
@@ -1291,7 +1398,7 @@ function PortfolioTab({ state, dispatch }) {
       )}
 
       {enriched.length > 0 && (
-        <div className="card">
+        <div className="card mb-6">
           <div className="section-title">Holdings Distribution</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={enriched.map(a=>({name:a.ticker,value:Math.round(a.value)})).sort((a,b)=>b.value-a.value)} margin={{top:5,right:20,bottom:5,left:10}}>
@@ -1304,6 +1411,79 @@ function PortfolioTab({ state, dispatch }) {
           </ResponsiveContainer>
         </div>
       )}
+
+      <div className="card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>Macro Indicators</div>
+          <div className="flex gap-2 items-center">
+            {mktLoading.macro && <span className="spinner" />}
+            {macroFetchedAt && !mktLoading.macro && <span style={{fontSize:10,color:'#718096'}}>cached {new Date(macroFetchedAt).toLocaleDateString()}</span>}
+            {!apiKeys.fred && <span style={{fontSize:11,color:'#718096'}}>Add FRED API key for live macro data</span>}
+            <button className="btn btn-secondary btn-sm" onClick={fetchMacroData} disabled={mktLoading.macro||!apiKeys.fred}>
+              {mktLoading.macro?'Loading…':'Fetch Macro Data'}
+            </button>
+          </div>
+        </div>
+        <div className="grid g2 gap-4">
+          {FRED_SERIES.map(s => {
+            const obs = macro[s.id];
+            const latest = obs?.[obs.length-1];
+            const prev   = obs?.[obs.length-2];
+            const change = latest&&prev ? latest.value-prev.value : null;
+            return (
+              <div key={s.id} style={{background:'#0f1117',borderRadius:8,padding:14,border:'1px solid #2d3748'}}>
+                <div style={{fontSize:11,color:'#718096',marginBottom:4}}>{s.label}</div>
+                <div style={{fontSize:20,fontWeight:700}}>
+                  {latest ? `${latest.value.toFixed(2)}${s.unit}` : <span className="gray">—</span>}
+                  {change!==null && <span style={{fontSize:13,marginLeft:8,color:change>=0?'#fc8181':'#68d391'}}>{change>=0?'+':''}{change.toFixed(2)}</span>}
+                </div>
+                {obs&&obs.length>1 && (
+                  <ResponsiveContainer width="100%" height={50}>
+                    <LineChart data={obs} margin={{top:4,right:4,bottom:0,left:4}}>
+                      <Line type="monotone" dataKey="value" stroke="#3182ce" strokeWidth={1.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="section-title" style={{marginBottom:0}}>News — Your Holdings</div>
+          <div className="flex gap-2 items-center">
+            {mktLoading.news && <span className="spinner" />}
+            {newsFetchedAt && !mktLoading.news && <span style={{fontSize:10,color:'#718096'}}>cached {new Date(newsFetchedAt).toLocaleDateString()}</span>}
+            {!apiKeys.finnhub && <span style={{fontSize:11,color:'#718096'}}>Add Finnhub API key for news</span>}
+            <button className="btn btn-secondary btn-sm" onClick={fetchNewsData} disabled={mktLoading.news||!apiKeys.finnhub||assets.length===0}>
+              {mktLoading.news?'Loading…':'Fetch News'}
+            </button>
+          </div>
+        </div>
+        {Object.keys(news).length===0 && (
+          <div className="gray tc" style={{padding:24,fontSize:13}}>
+            {assets.length===0?'Add assets to see relevant news':'Click "Fetch News" to load articles for your holdings'}
+          </div>
+        )}
+        {Object.entries(news).map(([ticker,articles]) => (
+          <div key={ticker} className="mb-6">
+            <div style={{fontSize:13,fontWeight:600,color:'#63b3ed',marginBottom:8}}>{ticker}</div>
+            {articles.length===0 && <div className="gray" style={{fontSize:12}}>No recent news</div>}
+            {articles.map((a,i) => (
+              <div key={i} style={{borderLeft:'2px solid #2d3748',paddingLeft:12,marginBottom:10}}>
+                <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>{a.headline}</div>
+                <div style={{fontSize:11,color:'#718096'}}>
+                  {a.source} · {new Date(a.datetime*1000).toLocaleDateString()}
+                  {a.url && <> · <a href={a.url} target="_blank" rel="noopener" style={{color:'#63b3ed'}}>Read →</a></>}
+                </div>
+                {a.summary && <div style={{fontSize:12,color:'#a0aec0',marginTop:4,lineHeight:1.5}}>{a.summary.slice(0,200)}{a.summary.length>200?'…':''}</div>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1528,16 +1708,332 @@ function DebtTab({ state, dispatch }) {
 }
 
 // =============================================================================
+// BUDGET TAB
+// =============================================================================
+function BudgetTab({ state }) {
+  const { profile, liabilities } = state;
+  const annualIncome = +(profile.annualIncome || profile.annual_income || 0);
+  const grossMonthly = Math.round(annualIncome / 12);
+
+  const estimateTax = (annual) => {
+    if (!annual) return 0;
+    const brackets = [[11600,0.10],[35550,0.12],[53375,0.22],[91425,0.24],[51775,0.32],[365625,0.35],[1e9,0.37]];
+    let tax = 0, rem = annual;
+    for (const [size, rate] of brackets) {
+      const t = Math.min(rem, size); tax += t * rate; rem -= t;
+      if (rem <= 0) break;
+    }
+    return Math.round(tax);
+  };
+
+  // Load persisted budget from localStorage
+  const initBudget = () => {
+    try { return JSON.parse(localStorage.getItem('finpal_budget') || '{}'); } catch { return {}; }
+  };
+  const saved = React.useMemo(initBudget, []);
+
+  const [housing,   setHousing]   = useState(saved.housing   ?? Math.round(grossMonthly * 0.30));
+  const [transport, setTransport] = useState(saved.transport  ?? Math.round(grossMonthly * 0.10));
+  const [food,      setFood]      = useState(saved.food       ?? Math.round(grossMonthly * 0.12));
+  const [other,     setOther]     = useState(saved.other      ?? Math.round(grossMonthly * 0.08));
+  const [goalSavings, setGoalSavings] = useState(saved.goalSavings ?? Math.round(grossMonthly * 0.05));
+  const [taxOverride, setTaxOverride] = useState(saved.taxOverride ?? null); // null = auto
+
+  // Persist on change
+  useEffect(() => {
+    localStorage.setItem('finpal_budget', JSON.stringify({ housing, transport, food, other, goalSavings, taxOverride }));
+  }, [housing, transport, food, other, goalSavings, taxOverride]);
+
+  const autoTax    = estimateTax(annualIncome);
+  const monthlyTax = Math.round((taxOverride !== null ? taxOverride : autoTax) / 12);
+  const takeHome   = grossMonthly - monthlyTax;
+  const totalExp   = housing + transport + food + other;
+  const afterExp   = takeHome - totalExp;
+  const debtMin    = Math.round(liabilities.reduce((s,l) => s + (+(l.minPayment||0)), 0));
+  const afterDebt  = afterExp - debtMin;
+  const investable = afterDebt - goalSavings;
+
+  // Stacked bar segments (% of gross)
+  const pct = v => grossMonthly > 0 ? Math.max(0, Math.min(100, v / grossMonthly * 100)) : 0;
+  const segments = [
+    { label:'Taxes',      value:monthlyTax,  color:'#fc8181' },
+    { label:'Housing',    value:housing,     color:'#f6ad55' },
+    { label:'Transport',  value:transport,   color:'#ecc94b' },
+    { label:'Food',       value:food,        color:'#f6ad55', opacity:0.7 },
+    { label:'Other',      value:other,       color:'#a0aec0' },
+    { label:'Debt',       value:debtMin,     color:'#fc8181', opacity:0.7 },
+    { label:'Goals',      value:goalSavings, color:'#b794f4' },
+    { label:'Investable', value:Math.max(0,investable), color:'#68d391' },
+  ];
+
+  const row = (label, amount, sublabel, color='#e2e8f0', prefix='-') => (
+    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid #1a1f2e'}}>
+      <div>
+        <span style={{fontSize:14,color:'#a0aec0'}}>{prefix} {label}</span>
+        {sublabel && <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>{sublabel}</span>}
+      </div>
+      <span style={{fontSize:15,fontWeight:600,color}}>{prefix==='-'?'−':''}{fmtFull(Math.abs(amount))}</span>
+    </div>
+  );
+
+  const totalRow = (label, amount) => (
+    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',padding:'12px 0',borderBottom:'2px solid #2d3748'}}>
+      <span style={{fontSize:14,fontWeight:700,color:'#e2e8f0'}}>{label}</span>
+      <span style={{fontSize:18,fontWeight:700,color:amount>=0?'#68d391':'#fc8181'}}>{fmtFull(amount)}</span>
+    </div>
+  );
+
+  const editRow = (label, value, setter, sublabel) => (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
+      <div>
+        <span style={{fontSize:14,color:'#a0aec0'}}>− {label}</span>
+        {sublabel && <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>{sublabel}</span>}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontSize:13,color:'#718096'}}>$</span>
+        <input type="number" min="0" value={value}
+          onChange={e=>setter(Math.max(0,+e.target.value))}
+          style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
+        <span style={{fontSize:13,color:'#718096'}}>/mo</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* ── Stacked composition bar ── */}
+      <div className="card mb-6">
+        <div className="section-title" style={{marginBottom:12}}>Where your money goes</div>
+        <div style={{display:'flex',height:28,borderRadius:6,overflow:'hidden',marginBottom:10}}>
+          {segments.map((s,i) => (
+            <div key={i} style={{width:`${pct(s.value)}%`,background:s.color,opacity:s.opacity||1,transition:'width 0.3s'}} title={`${s.label}: ${fmtFull(s.value)}`} />
+          ))}
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:'6px 16px'}}>
+          {segments.map((s,i) => (
+            <div key={i} style={{display:'flex',alignItems:'center',gap:5,fontSize:11}}>
+              <div style={{width:10,height:10,borderRadius:2,background:s.color,opacity:s.opacity||1,flexShrink:0}} />
+              <span style={{color:'#718096'}}>{s.label}</span>
+              <span style={{color:'#a0aec0',fontWeight:600}}>{pct(s.value).toFixed(0)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid g2 gap-6">
+        {/* ── Left: cascade ── */}
+        <div className="card">
+          <div style={{padding:'10px 0',borderBottom:'2px solid #2d3748',display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+            <span style={{fontSize:14,fontWeight:700,color:'#e2e8f0'}}>Gross monthly income</span>
+            <span style={{fontSize:20,fontWeight:700,color:'#63b3ed'}}>{fmtFull(grossMonthly)}</span>
+          </div>
+
+          {/* Tax */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
+            <div>
+              <span style={{fontSize:14,color:'#a0aec0'}}>− Est. taxes</span>
+              <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>
+                {taxOverride !== null
+                  ? <button style={{fontSize:10,color:'#63b3ed',background:'none',border:'none',cursor:'pointer',padding:0}} onClick={()=>setTaxOverride(null)}>reset to auto</button>
+                  : `~${annualIncome>0?(autoTax/annualIncome*100).toFixed(0):0}% effective`}
+              </span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:13,color:'#718096'}}>$</span>
+              <input type="number" min="0" value={taxOverride !== null ? Math.round(taxOverride/12) : monthlyTax}
+                onChange={e=>setTaxOverride(Math.max(0,+e.target.value)*12)}
+                style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
+              <span style={{fontSize:13,color:'#718096'}}>/mo</span>
+            </div>
+          </div>
+
+          {totalRow('Take-home', takeHome)}
+
+          {editRow('Housing', housing, setHousing, 'rent, mortgage, utilities')}
+          {editRow('Transport', transport, setTransport, 'car, fuel, transit')}
+          {editRow('Food & dining', food, setFood, 'groceries, restaurants')}
+          {editRow('Everything else', other, setOther, 'subscriptions, personal, misc')}
+
+          {totalRow('After expenses', afterExp)}
+
+          {row('Debt minimums', debtMin, 'auto from Debt tab', '#fc8181')}
+
+          {totalRow('After debt', afterDebt)}
+
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
+            <div>
+              <span style={{fontSize:14,color:'#a0aec0'}}>− Goal savings</span>
+              <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>feeds Goals tab</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:13,color:'#718096'}}>$</span>
+              <input type="number" min="0" value={goalSavings}
+                onChange={e=>setGoalSavings(Math.max(0,+e.target.value))}
+                style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
+              <span style={{fontSize:13,color:'#718096'}}>/mo</span>
+            </div>
+          </div>
+
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 0 4px'}}>
+            <span style={{fontSize:15,fontWeight:700}}>Available to invest</span>
+            <span style={{fontSize:26,fontWeight:800,color:investable>=0?'#68d391':'#fc8181'}}>{fmtFull(investable)}<span style={{fontSize:14,fontWeight:400,color:'#718096'}}>/mo</span></span>
+          </div>
+          {investable < 0 && (
+            <div style={{fontSize:12,color:'#fc8181',marginTop:4}}>
+              You're {fmtFull(Math.abs(investable))}/mo over budget — reduce expenses or debt to free up cash.
+            </div>
+          )}
+          {investable > 0 && (
+            <div style={{fontSize:12,color:'#68d391',marginTop:4}}>
+              Invest this consistently and it compounds to{' '}
+              <strong style={{color:'#68d391'}}>{fmtFull(Math.round(investable*12*((Math.pow(1.07,10)-1)/0.07)))}</strong> in 10 years at 7%.
+            </div>
+          )}
+        </div>
+
+        {/* ── Right: summary cards ── */}
+        <div>
+          <div className="card mb-4">
+            <div className="section-title" style={{marginBottom:12}}>Monthly snapshot</div>
+            {[
+              ['Gross income',      grossMonthly, '#63b3ed'],
+              ['Taxes',            -monthlyTax,   '#fc8181'],
+              ['Take-home',         takeHome,      '#e2e8f0'],
+              ['Total expenses',   -totalExp,      '#f6ad55'],
+              ['Debt payments',    -debtMin,       '#fc8181'],
+              ['Goal savings',     -goalSavings,   '#b794f4'],
+              ['Investable',        investable,    investable>=0?'#68d391':'#fc8181'],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'6px 0',borderBottom:'1px solid #1a1f2e'}}>
+                <span style={{color:'#a0aec0'}}>{label}</span>
+                <span style={{fontWeight:600,color}}>{val<0?'−':''}{fmtFull(Math.abs(val))}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="card mb-4">
+            <div className="section-title" style={{marginBottom:12}}>Expense ratios</div>
+            {[
+              ['Housing',     housing],
+              ['Transport',   transport],
+              ['Food',        food],
+              ['Other',       other],
+              ['Debt',        debtMin],
+              ['Goals',       goalSavings],
+            ].map(([label, val]) => (
+              <div key={label} style={{marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
+                  <span style={{color:'#a0aec0'}}>{label}</span>
+                  <span style={{color:'#718096'}}>{fmtFull(val)} · {pct(val).toFixed(0)}% of gross</span>
+                </div>
+                <div className="progress-track" style={{height:5}}>
+                  <div className="progress-fill" style={{width:`${pct(val)}%`,background: label==='Debt'?'#fc8181':label==='Goals'?'#b794f4':'#3182ce'}} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card" style={{background:'#0f1a0f',border:'1px solid #276749'}}>
+            <div style={{fontSize:12,color:'#68d391',fontWeight:600,marginBottom:8}}>50/30/20 benchmark</div>
+            {(() => {
+              const needs = housing + transport + food + debtMin;
+              const wants = other;
+              const savings = goalSavings + Math.max(0,investable);
+              return [
+                ['Needs (target ≤50%)',   needs,   pct(needs)   <= 50 ],
+                ['Wants (target ≤30%)',   wants,   pct(wants)   <= 30 ],
+                ['Savings (target ≥20%)', savings, pct(savings) >= 20 ],
+              ].map(([label, val, ok]) => (
+                <div key={label} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'4px 0'}}>
+                  <span style={{color:'#a0aec0'}}>{label}</span>
+                  <span style={{color:ok?'#68d391':'#fc8181',fontWeight:600}}>{pct(val).toFixed(0)}% {ok?'✓':'✗'}</span>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
 // GOALS TAB
 // =============================================================================
 function GoalsTab({ state, dispatch }) {
-  const { goals } = state;
-  const topGoal = goals && (goals.find(g=>g.priority==='high') || goals[0]);
+  const { goals, cash, assets, livePrices, profile } = state;
+  const today = new Date();
+
+  // Monthly savings budget — read from Budget tab (goalSavings field in localStorage)
+  const monthlyBudget = useMemo(() => {
+    try {
+      const b = JSON.parse(localStorage.getItem('finpal_budget') || '{}');
+      if (b.goalSavings != null) return +b.goalSavings;
+    } catch {}
+    return Math.round((+(profile.annualIncome||profile.annual_income||0)) * 0.20 / 12) || 1000;
+  }, [profile.annualIncome, profile.annual_income]);
+
   const [showAdd, setShowAdd] = useState(false);
   const [newGoal, setNewGoal] = useState({ name:'', targetAmount:0, targetDate:'', currentSaved:0, priority:'medium' });
   const [addErr, setAddErr] = useState('');
-  const [editSaved, setEditSaved] = useState({});
-  const today = new Date();
+  const [editId, setEditId] = useState(null);
+  const [editData, setEditData] = useState({});
+
+  // Liquid context
+  const totalCash = cash.reduce((s,c) => s + c.amount, 0);
+  const totalPortfolio = assets.reduce((s,a) => s + (livePrices[a.ticker]?.price||a.costBasis)*a.shares, 0);
+
+  const PRI_WEIGHT = { high:3, medium:2, low:1 };
+
+  // Enrich goals with computed fields, sorted by urgency
+  const enriched = useMemo(() => {
+    return goals.map(g => {
+      const targetDate = g.targetDate || g.target_date || '';
+      const targetAmt  = +(g.targetAmount ?? g.target_amount ?? 0);
+      const saved      = +(g.currentSaved ?? g.current_saved ?? 0);
+      const remaining  = Math.max(0, targetAmt - saved);
+      const pct        = targetAmt > 0 ? Math.min(100, saved / targetAmt * 100) : 0;
+      const months     = monthsBetween(today, targetDate);
+      const monthlyNeeded = months > 0 ? remaining / months : (remaining > 0 ? Infinity : 0);
+      const pw         = PRI_WEIGHT[g.priority] || 2;
+      // Urgency: high priority, near deadline, low completion = high urgency
+      const urgency    = months > 0 ? (pw * (1 - pct/100 + 0.1) * 100) / months : pw * 20;
+      return { ...g, targetDate, targetAmt, saved, remaining, pct, months, monthlyNeeded, urgency };
+    }).sort((a, b) => b.urgency - a.urgency);
+  }, [goals, today]);
+
+  // Allocate monthly budget across goals by urgency weight
+  const allocations = useMemo(() => {
+    const totalNeeded = enriched.reduce((s,g) => s + (isFinite(g.monthlyNeeded) ? g.monthlyNeeded : 0), 0);
+    if (totalNeeded <= 0) return {};
+    const allocs = {};
+    if (totalNeeded <= monthlyBudget) {
+      enriched.forEach(g => { allocs[g.id] = isFinite(g.monthlyNeeded) ? g.monthlyNeeded : 0; });
+    } else {
+      const totalUrgency = enriched.reduce((s,g) => s + g.urgency, 0);
+      enriched.forEach(g => {
+        const raw = totalUrgency > 0 ? (g.urgency / totalUrgency) * monthlyBudget : 0;
+        allocs[g.id] = Math.min(raw, isFinite(g.monthlyNeeded) ? g.monthlyNeeded : raw);
+      });
+    }
+    return allocs;
+  }, [enriched, monthlyBudget]);
+
+  const totalNeeded   = enriched.reduce((s,g) => s + (isFinite(g.monthlyNeeded) ? g.monthlyNeeded : 0), 0);
+  const totalAllocated = Object.values(allocations).reduce((s,v) => s+v, 0);
+  const surplus       = monthlyBudget - totalAllocated;
+  const onTrackCount  = enriched.filter(g => {
+    const alloc = allocations[g.id] || 0;
+    return g.remaining <= 0 || (isFinite(g.monthlyNeeded) && alloc >= g.monthlyNeeded * 0.95);
+  }).length;
+
+  // Projected months to complete goal at its allocated amount
+  const projMonths = (g) => {
+    const alloc = allocations[g.id] || 0;
+    if (g.remaining <= 0) return 0;
+    if (alloc <= 0) return Infinity;
+    return Math.ceil(g.remaining / alloc);
+  };
 
   const addGoal = async () => {
     if (!newGoal.name.trim() || !newGoal.targetDate) return setAddErr('Name and target date required');
@@ -1556,56 +2052,98 @@ function GoalsTab({ state, dispatch }) {
     try { await apiDelete(`/api/goals/${id}`); dispatch({ type:'REMOVE_GOAL', id }); } catch(e) {}
   };
 
-  const updateSaved = async (g) => {
-    const val = parseFloat(editSaved[g.id]);
-    if (isNaN(val)) return;
+  const startEdit = (g) => {
+    setEditId(g.id);
+    setEditData({ name:g.name, targetAmount:g.targetAmt, targetDate:g.targetDate, currentSaved:g.saved, priority:g.priority });
+  };
+
+  const saveEdit = async () => {
     try {
-      const updated = await apiPut(`/api/goals/${g.id}`, {...g, currentSaved:val});
-      dispatch({ type:'UPDATE_GOAL', id:g.id, data:updated });
-      setEditSaved(s => { const n={...s}; delete n[g.id]; return n; });
+      const updated = await apiPut(`/api/goals/${editId}`, {
+        name: editData.name, targetAmount:+editData.targetAmount,
+        targetDate: editData.targetDate, currentSaved:+editData.currentSaved,
+        priority: editData.priority,
+      });
+      dispatch({ type:'UPDATE_GOAL', id:editId, data:updated });
     } catch(e) {}
+    setEditId(null);
   };
 
   return (
     <div>
-      {topGoal && (() => {
-        const targetDate = topGoal.targetDate || topGoal.target_date;
-        const targetAmt = +(topGoal.targetAmount ?? topGoal.target_amount ?? 0);
-        const saved = +(topGoal.currentSaved ?? topGoal.current_saved ?? 0);
-        const now = new Date();
-        const end = targetDate ? new Date(targetDate) : null;
-        const mLeft = end ? Math.max(0,(end.getFullYear()-now.getFullYear())*12+end.getMonth()-now.getMonth()) : 0;
-        const needed = mLeft > 0 ? Math.max(0,targetAmt-saved)/mLeft : 0;
-        const capacity = (state.profile?.annualIncome||state.profile?.annual_income||0)/12*0.2;
-        const onTrack = capacity > 0 && needed <= capacity;
-        return (
-          <div className="card mb-4" style={{background:onTrack?'#0f1a0f':'#1a0f0f',border:`1px solid ${onTrack?'#276749':'#9b2c2c'}`}}>
-            <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.6}}>
-              <strong>{topGoal.name}:</strong>{' '}
-              {onTrack
-                ? <span style={{color:'#68d391'}}>You're on track — {fmtFull(needed)}/mo needed is within your estimated savings capacity.</span>
-                : <span style={{color:'#f6ad55'}}>You need {fmtFull(needed)}/mo to stay on track. Consider increasing contributions or adjusting your timeline.</span>}
-            </div>
+      {/* ── Budget & summary bar ── */}
+      <div className="card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="section-title" style={{marginBottom:2}}>Monthly Goal Savings</div>
+            <div style={{fontSize:12,color:'#718096'}}>Set in the Budget tab — "Goal savings" line</div>
           </div>
-        );
-      })()}
+          <div className="flex gap-2 items-center">
+            <span style={{fontSize:22,fontWeight:700,color:'#68d391'}}>{fmtFull(monthlyBudget)}<span style={{fontSize:13,fontWeight:400,color:'#718096'}}>/mo</span></span>
+            <button className="btn btn-secondary btn-sm" style={{fontSize:11}}
+              onClick={()=>window.dispatchEvent(new CustomEvent('finpal-nav',{detail:'Budget'}))}>
+              Edit in Budget →
+            </button>
+          </div>
+        </div>
+
+        {enriched.length > 0 && (
+          <>
+            <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+              <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px'}}>
+                <div className="card-title">Goals on track</div>
+                <div className="card-value" style={{color: onTrackCount===enriched.length?'#68d391':'#f6ad55'}}>
+                  {onTrackCount} / {enriched.length}
+                </div>
+              </div>
+              <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px'}}>
+                <div className="card-title">Total needed/mo</div>
+                <div className="card-value" style={{color:'#e2e8f0'}}>{isFinite(totalNeeded)?fmtFull(totalNeeded):'—'}</div>
+              </div>
+              <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px'}}>
+                <div className="card-title">{surplus >= 0 ? 'Surplus/mo' : 'Shortfall/mo'}</div>
+                <div className="card-value" style={{color:surplus>=0?'#68d391':'#fc8181'}}>{fmtFull(Math.abs(surplus))}</div>
+              </div>
+              <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px'}}>
+                <div className="card-title">Liquid savings</div>
+                <div className="card-value" style={{color:'#63b3ed'}}>{fmtFull(totalCash)}</div>
+              </div>
+            </div>
+
+            {/* Budget allocation bar */}
+            <div style={{marginBottom:4,fontSize:11,color:'#718096'}}>Budget allocation</div>
+            <div className="progress-track" style={{height:10,marginBottom:4}}>
+              <div className="progress-fill" style={{
+                width:`${Math.min(100,(totalAllocated/monthlyBudget)*100)}%`,
+                background: totalAllocated > monthlyBudget ? '#fc8181' : '#68d391',
+              }} />
+            </div>
+            <div style={{fontSize:11,color:'#718096'}}>{fmtFull(totalAllocated)} allocated of {fmtFull(monthlyBudget)} budget</div>
+          </>
+        )}
+      </div>
+
+      {/* ── Header + add button ── */}
       <div className="flex items-center justify-between mb-4">
-        <div className="section-title" style={{marginBottom:0}}>Financial Goals</div>
+        <div className="section-title" style={{marginBottom:0}}>Goals</div>
         <button className="btn btn-primary btn-sm" onClick={()=>setShowAdd(v=>!v)}>
           {showAdd?'Cancel':'+ Add Goal'}
         </button>
       </div>
 
+      {/* ── Add form ── */}
       {showAdd && (
         <div className="card mb-6">
           <div className="grid g2 gap-4 mb-4" style={{alignItems:'end'}}>
             <div className="form-group" style={{marginBottom:0}}><label>Goal Name</label>
-              <input value={newGoal.name} onChange={e=>setNewGoal(g=>({...g,name:e.target.value}))} placeholder="Down payment…" /></div>
+              <input value={newGoal.name} onChange={e=>setNewGoal(g=>({...g,name:e.target.value}))} placeholder="House down payment…" /></div>
             <div className="form-group" style={{marginBottom:0}}><label>Target Amount ($)</label>
               <input type="number" min="0" value={newGoal.targetAmount} onChange={e=>setNewGoal(g=>({...g,targetAmount:e.target.value}))} /></div>
             <div className="form-group" style={{marginBottom:0}}><label>Target Date</label>
               <input type="date" value={newGoal.targetDate} onChange={e=>setNewGoal(g=>({...g,targetDate:e.target.value}))} /></div>
-            <div className="form-group" style={{marginBottom:0}}><label>Already Saved ($)</label>
+            <div className="form-group" style={{marginBottom:0}}>
+              <label>Already Saved ($) <button type="button" style={{fontSize:10,color:'#63b3ed',background:'none',border:'none',cursor:'pointer',padding:0,marginLeft:4}}
+                onClick={()=>setNewGoal(g=>({...g,currentSaved:Math.round(totalCash)}))}>use cash balance</button></label>
               <input type="number" min="0" value={newGoal.currentSaved} onChange={e=>setNewGoal(g=>({...g,currentSaved:e.target.value}))} /></div>
             <div className="form-group" style={{marginBottom:0}}><label>Priority</label>
               <select value={newGoal.priority} onChange={e=>setNewGoal(g=>({...g,priority:e.target.value}))}>
@@ -1618,65 +2156,114 @@ function GoalsTab({ state, dispatch }) {
       )}
 
       {goals.length === 0 && !showAdd && (
-        <div className="card tc gray" style={{padding:40}}>No goals set — click "+ Add Goal" to start</div>
+        <div className="card tc gray" style={{padding:40}}>
+          No goals yet — add a goal to see how to allocate your {fmtFull(monthlyBudget)}/mo savings budget
+        </div>
       )}
 
+      {/* ── Goal cards ── */}
       <div className="grid g2 gap-4">
-        {goals.map(g => {
-          const months = monthsBetween(today, g.targetDate);
-          const remaining = Math.max(0, g.targetAmount - g.currentSaved);
-          const monthlyNeeded = months > 0 ? remaining/months : remaining;
-          const pct = g.targetAmount > 0 ? Math.min(100, g.currentSaved/g.targetAmount*100) : 0;
-          const onTrack = monthlyNeeded < (state.profile.annualIncome/12*0.2);
-          const isEditing = editSaved[g.id] !== undefined;
+        {enriched.map(g => {
+          const alloc   = allocations[g.id] || 0;
+          const proj    = projMonths(g);
+          const isLate  = isFinite(proj) && proj > g.months && g.months > 0;
+          const isMet   = g.remaining <= 0;
+          const statusColor = isMet ? '#68d391' : isLate ? '#fc8181' : '#68d391';
+          const isEditingThis = editId === g.id;
 
           return (
-            <div key={g.id} className="card">
-              <div className="flex items-center justify-between mb-2">
+            <div key={g.id} className="card" style={{border:`1px solid ${isMet?'#276749':isLate?'#9b2c2c':'#2d3748'}`}}>
+              {isEditingThis ? (
                 <div>
-                  <div className="bold" style={{fontSize:15}}>{g.name}</div>
-                  <div style={{fontSize:12,color:'#718096'}}>Target: {fmtDate(g.targetDate)} · {months} months away</div>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Edit Goal</div>
+                  <div className="grid g2 gap-3 mb-3">
+                    <div className="form-group" style={{marginBottom:0}}><label>Name</label>
+                      <input value={editData.name} onChange={e=>setEditData(d=>({...d,name:e.target.value}))} /></div>
+                    <div className="form-group" style={{marginBottom:0}}><label>Target ($)</label>
+                      <input type="number" min="0" value={editData.targetAmount} onChange={e=>setEditData(d=>({...d,targetAmount:e.target.value}))} /></div>
+                    <div className="form-group" style={{marginBottom:0}}><label>Target Date</label>
+                      <input type="date" value={editData.targetDate} onChange={e=>setEditData(d=>({...d,targetDate:e.target.value}))} /></div>
+                    <div className="form-group" style={{marginBottom:0}}><label>Saved ($)</label>
+                      <input type="number" min="0" value={editData.currentSaved} onChange={e=>setEditData(d=>({...d,currentSaved:e.target.value}))} /></div>
+                    <div className="form-group" style={{marginBottom:0}}><label>Priority</label>
+                      <select value={editData.priority} onChange={e=>setEditData(d=>({...d,priority:e.target.value}))}>
+                        <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                      </select></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="btn btn-success btn-sm" onClick={saveEdit}>Save</button>
+                    <button className="btn btn-secondary btn-sm" onClick={()=>setEditId(null)}>Cancel</button>
+                  </div>
                 </div>
-                <div className="flex gap-2 items-center">
-                  <span className={`badge ${g.priority==='high'?'b-red':g.priority==='medium'?'b-yellow':'b-blue'}`}>{g.priority}</span>
-                  <button className="btn btn-danger btn-sm" onClick={()=>removeGoal(g.id)}>×</button>
-                </div>
-              </div>
-              <div className="progress-track mb-2">
-                <div className="progress-fill" style={{width:`${pct}%`,background:pct>=100?'#68d391':'#3182ce'}} />
-              </div>
-              <div className="flex justify-between" style={{fontSize:12}}>
-                <span className="gray">{fmtFull(g.currentSaved)} saved</span>
-                <span className="bold">{pct.toFixed(0)}%</span>
-                <span className="gray">{fmtFull(g.targetAmount)} goal</span>
-              </div>
-              <hr className="divider" />
-              <div className="grid g2 gap-2" style={{fontSize:12}}>
-                <div><span className="gray">Remaining: </span><span className="bold">{fmtFull(remaining)}</span></div>
-                <div><span className="gray">Monthly needed: </span>
-                  <span className={`bold ${onTrack?'green':'yellow'}`}>{fmtFull(monthlyNeeded)}/mo</span>
-                </div>
-              </div>
-              <div className="flex gap-2 items-center mt-2">
-                <input type="number" min="0" placeholder="Update saved amount"
-                  value={isEditing ? editSaved[g.id] : ''}
-                  onChange={e=>setEditSaved(s=>({...s,[g.id]:e.target.value}))}
-                  style={{flex:1,fontSize:12}} />
-                {isEditing && <button className="btn btn-success btn-sm" onClick={()=>updateSaved(g)}>Update</button>}
-              </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="bold" style={{fontSize:15}}>{g.name}</div>
+                      <div style={{fontSize:12,color:'#718096'}}>
+                        {isMet ? '✓ Complete' : `${g.targetDate ? fmtDate(g.targetDate) : '—'} · ${g.months} months away`}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <span className={`badge ${g.priority==='high'?'b-red':g.priority==='medium'?'b-yellow':'b-blue'}`}>{g.priority}</span>
+                      <button className="btn btn-secondary btn-sm" onClick={()=>startEdit(g)}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={()=>removeGoal(g.id)}>×</button>
+                    </div>
+                  </div>
+
+                  <div className="progress-track mb-1">
+                    <div className="progress-fill" style={{width:`${g.pct}%`,background:isMet?'#68d391':'#3182ce'}} />
+                  </div>
+                  <div className="flex justify-between mb-3" style={{fontSize:12}}>
+                    <span className="gray">{fmtFull(g.saved)} saved</span>
+                    <span className="bold">{g.pct.toFixed(0)}%</span>
+                    <span className="gray">{fmtFull(g.targetAmt)} goal</span>
+                  </div>
+
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,fontSize:12}}>
+                    <div style={{background:'#0f1117',borderRadius:6,padding:'8px 10px'}}>
+                      <div style={{color:'#718096',marginBottom:2}}>Remaining</div>
+                      <div className="bold">{fmtFull(g.remaining)}</div>
+                    </div>
+                    <div style={{background:'#0f1117',borderRadius:6,padding:'8px 10px'}}>
+                      <div style={{color:'#718096',marginBottom:2}}>Needed/mo (to hit date)</div>
+                      <div className="bold">{isFinite(g.monthlyNeeded)?fmtFull(g.monthlyNeeded):'past due'}</div>
+                    </div>
+                    <div style={{background:'#0f1117',borderRadius:6,padding:'8px 10px'}}>
+                      <div style={{color:'#718096',marginBottom:2}}>Allocated from budget</div>
+                      <div className="bold" style={{color:'#63b3ed'}}>{fmtFull(alloc)}/mo</div>
+                    </div>
+                    <div style={{background:'#0f1117',borderRadius:6,padding:'8px 10px'}}>
+                      <div style={{color:'#718096',marginBottom:2}}>Projected completion</div>
+                      <div className="bold" style={{color:statusColor}}>
+                        {isMet ? 'Done!' : !isFinite(proj) ? 'No funds allocated' : isLate
+                          ? `${proj} mo (${proj - g.months} mo late)`
+                          : `${proj} mo (on time)`}
+                      </div>
+                    </div>
+                  </div>
+
+                  {!isMet && isLate && isFinite(g.monthlyNeeded) && (
+                    <div style={{marginTop:10,fontSize:12,color:'#f6ad55',background:'#1a1200',borderRadius:6,padding:'8px 10px'}}>
+                      Need {fmtFull(g.monthlyNeeded - alloc)} more/mo to hit this on time — increase budget or push the deadline.
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           );
         })}
       </div>
 
-      {goals.length > 0 && (
-        <div className="card mt-4">
-          <div className="section-title">Goals Progress Overview</div>
+      {/* ── Overview chart ── */}
+      {enriched.length > 0 && (
+        <div className="card mt-6">
+          <div className="section-title">Progress Overview</div>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={goals.map(g=>({
+            <BarChart data={enriched.map(g=>({
               name: g.name.length>12?g.name.slice(0,12)+'…':g.name,
-              saved: g.currentSaved,
-              remaining: Math.max(0,g.targetAmount-g.currentSaved),
+              saved: Math.round(g.saved),
+              remaining: Math.round(g.remaining),
             }))} margin={{top:5,right:20,bottom:5,left:10}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
               <XAxis dataKey="name" tick={{fill:'#a0aec0',fontSize:11}} axisLine={false} tickLine={false} />
@@ -1694,91 +2281,414 @@ function GoalsTab({ state, dispatch }) {
 }
 
 // =============================================================================
-// MODELS TAB
+// MODELS TAB — CAREER PROFILES + MILESTONE TABLE
 // =============================================================================
+
+// Career profiles: milestones are in years-from-now so they're age-relative
+const CAREER_PROFILES = [
+  {
+    id: 'tech_ic', label: 'Tech IC', icon: '💻',
+    description: 'Individual contributor — Senior → Staff → Principal',
+    milestones: [
+      { yearsFromNow: 2,  label: 'Mid-level (L4/L5)',    salaryChangePct: 20 },
+      { yearsFromNow: 5,  label: 'Senior (L5/L6)',        salaryChangePct: 28 },
+      { yearsFromNow: 9,  label: 'Staff Engineer (L7)',   salaryChangePct: 25 },
+      { yearsFromNow: 14, label: 'Principal (L7+)',       salaryChangePct: 20 },
+    ],
+  },
+  {
+    id: 'tech_mgmt', label: 'Tech Management', icon: '📋',
+    description: 'IC → EM → Director → VP',
+    milestones: [
+      { yearsFromNow: 2,  label: 'Tech Lead / Senior',   salaryChangePct: 18 },
+      { yearsFromNow: 4,  label: 'Engineering Manager',  salaryChangePct: 22 },
+      { yearsFromNow: 8,  label: 'Director',             salaryChangePct: 30 },
+      { yearsFromNow: 13, label: 'VP Engineering',       salaryChangePct: 35 },
+    ],
+  },
+  {
+    id: 'finance', label: 'Finance / Banking', icon: '🏦',
+    description: 'Analyst → Associate → VP → MD',
+    milestones: [
+      { yearsFromNow: 2,  label: 'Senior Analyst',       salaryChangePct: 15 },
+      { yearsFromNow: 4,  label: 'Associate',            salaryChangePct: 35 },
+      { yearsFromNow: 7,  label: 'Vice President',       salaryChangePct: 40 },
+      { yearsFromNow: 12, label: 'Director / MD',        salaryChangePct: 60 },
+    ],
+  },
+  {
+    id: 'law', label: 'Law', icon: '⚖️',
+    description: 'Associate → Senior → Partner',
+    milestones: [
+      { yearsFromNow: 3, label: 'Mid-level Associate',   salaryChangePct: 15 },
+      { yearsFromNow: 6, label: 'Senior Associate',      salaryChangePct: 20 },
+      { yearsFromNow: 9, label: 'Equity Partner',        salaryChangePct: 90 },
+    ],
+  },
+  {
+    id: 'medicine', label: 'Medicine', icon: '🏥',
+    description: 'Resident → Fellowship → Attending',
+    milestones: [
+      { yearsFromNow: 2, label: 'Senior Resident',       salaryChangePct: 8 },
+      { yearsFromNow: 5, label: 'Fellowship complete',   salaryChangePct: 12 },
+      { yearsFromNow: 7, label: 'Attending Physician',   salaryChangePct: 160 },
+      { yearsFromNow: 12, label: 'Senior Attending',     salaryChangePct: 15 },
+    ],
+  },
+  {
+    id: 'corporate', label: 'Corporate', icon: '🏢',
+    description: 'Steady growth across business functions',
+    milestones: [
+      { yearsFromNow: 3,  label: 'Senior / Lead',        salaryChangePct: 12 },
+      { yearsFromNow: 7,  label: 'Manager',              salaryChangePct: 18 },
+      { yearsFromNow: 12, label: 'Director',             salaryChangePct: 22 },
+      { yearsFromNow: 18, label: 'VP / Executive',       salaryChangePct: 28 },
+    ],
+  },
+];
+
 function ModelsTab({ state }) {
-  const { profile, assets, liabilities, cash, livePrices } = state;
-  const [mcParams, setMcParams] = useState({ retirementAge:65, monthlyContribution:2000, withdrawalRate:4, extraReturn:0 });
+  const { profile, assets, cash, livePrices, liabilities, goals } = state;
+  const currentAge = +(profile.age || 30);
+
+  // ── Pull real financial data ──────────────────────────────────────────────
+  const totalPortfolio = useMemo(() =>
+    assets.reduce((s,a) => s + (livePrices[a.ticker]?.price || a.costBasis) * a.shares, 0),
+  [assets, livePrices]);
+  const totalCash     = useMemo(() => cash.reduce((s,c) => s + c.amount, 0), [cash]);
+  const totalDebt     = useMemo(() => liabilities.reduce((s,l) => s + l.balance, 0), [liabilities]);
+  const netWorth      = totalPortfolio + totalCash - totalDebt;
+  const debtMinTotal  = useMemo(() => liabilities.reduce((s,l) => s + (+(l.minPayment||0)), 0), [liabilities]);
+
+  // Budget tab settings (localStorage)
+  const budgetData = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('finpal_budget') || '{}'); } catch { return {}; }
+  }, []);
+  const grossMonthly  = Math.round((+(profile.annualIncome||0)) / 12);
+  const estimatedTax  = budgetData.taxOverride != null
+    ? Math.round(budgetData.taxOverride / 12)
+    : (() => {
+        const a = +(profile.annualIncome||0);
+        const brackets = [[11600,0.10],[35550,0.12],[53375,0.22],[91425,0.24],[51775,0.32],[365625,0.35],[1e9,0.37]];
+        let tax=0, rem=a;
+        for (const [size,rate] of brackets){const t=Math.min(rem,size);tax+=t*rate;rem-=t;if(rem<=0)break;}
+        return Math.round(tax/12);
+      })();
+  const housing    = budgetData.housing    ?? Math.round(grossMonthly * 0.30);
+  const transport  = budgetData.transport  ?? Math.round(grossMonthly * 0.10);
+  const food       = budgetData.food       ?? Math.round(grossMonthly * 0.12);
+  const otherExp   = budgetData.other      ?? Math.round(grossMonthly * 0.08);
+  const goalSavings = budgetData.goalSavings ?? Math.round(grossMonthly * 0.05);
+  const totalExpenses = housing + transport + food + otherExp;
+  const investable = grossMonthly - estimatedTax - totalExpenses - debtMinTotal - goalSavings;
+
+  // ── Debt payoff ages → cashflow boosts ───────────────────────────────────
+  const debtBoosts = useMemo(() => {
+    return liabilities
+      .map(l => {
+        const r = (+(l.apr||0)) / 100 / 12;
+        const B = +(l.balance||0);
+        const P = +(l.minPayment||0);
+        if (B <= 0 || P <= 0) return null;
+        let months;
+        if (r < 1e-9) {
+          months = B / P;
+        } else {
+          const denom = Math.log(1 + r);
+          const num   = Math.log(1 - r * B / P);
+          if (!isFinite(num) || num >= 0) months = 600; // interest >= payment, never paid off
+          else months = -num / denom;
+        }
+        months = Math.ceil(months);
+        if (months > 600) return null;
+        const payoffAge = +(currentAge + months / 12).toFixed(1);
+        if (payoffAge >= (profile.age ? 65 : 65)) return null;
+        return { age: payoffAge, amount: P, label: `${l.name} paid off`, type: 'debt' };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.age - b.age);
+  }, [liabilities, currentAge]);
+
+  // ── Goal deadline ages → cashflow boosts ─────────────────────────────────
+  const goalBoosts = useMemo(() => {
+    if (!goalSavings || !goals.length) return [];
+    // Simple: when a goal's target date passes, its allocation share frees up
+    const totalNeededPerGoal = goals.map(g => {
+      const remaining = Math.max(0, (+(g.targetAmount||g.target_amount||0)) - (+(g.currentSaved||g.current_saved||0)));
+      return remaining;
+    });
+    const totalRemaining = totalNeededPerGoal.reduce((s,v)=>s+v, 0);
+    return goals.map((g, i) => {
+      const targetDate = g.targetDate || g.target_date;
+      if (!targetDate) return null;
+      const months = monthsBetween(new Date(), targetDate);
+      if (months <= 0) return null;
+      const goalAge = +(currentAge + months / 12).toFixed(1);
+      const share = totalRemaining > 0 ? (totalNeededPerGoal[i] / totalRemaining) * goalSavings : goalSavings / goals.length;
+      return { age: goalAge, amount: Math.round(share), label: `"${g.name}" funded`, type: 'goal' };
+    }).filter(Boolean).sort((a, b) => a.age - b.age);
+  }, [goals, goalSavings, currentAge]);
+
+  const allBoosts = useMemo(() => [...debtBoosts, ...goalBoosts].sort((a,b) => a.age - b.age), [debtBoosts, goalBoosts]);
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  const defaultContrib = Math.max(100, investable > 0 ? investable : Math.round((+(profile.annualIncome||100000)) * 0.15 / 12));
+  const [mcParams, setMcParams] = useState({
+    retirementAge: 65,
+    monthlyContribution: defaultContrib,
+    withdrawalRate: 4,
+    colaRate: 2,
+    selectedProfile: null,
+    useRealData: true,
+  });
+  const [milestones, setMilestones] = useState([]);
   const [mcResult, setMcResult] = useState(null);
   const [running, setRunning] = useState(false);
 
-  const totalPortfolio = useMemo(() =>
-    assets.reduce((s,a) => s + (livePrices[a.ticker]?.price||a.costBasis)*a.shares, 0) +
-    cash.reduce((s,c)=>s+c.amount,0),
-  [assets, livePrices, cash]);
+  // Live-data toggle: when on, use budget-derived investable + net worth as starting point
+  const effectiveContrib  = mcParams.useRealData && investable > 0 ? investable : mcParams.monthlyContribution;
+  const effectiveSavings  = mcParams.useRealData ? netWorth : totalPortfolio + totalCash;
+  const annualWR          = mcParams.withdrawalRate / 100;
+  const yearsToRetirement = Math.max(1, mcParams.retirementAge - currentAge);
+
+  const sortedMilestones = useMemo(() => [...milestones].sort((a,b) => a.age - b.age), [milestones]);
+
+  const getContribAtAge = (age) => {
+    const yrs = age - currentAge;
+    if (yrs <= 0) return effectiveContrib;
+    let mult = Math.pow(1 + mcParams.colaRate / 100, yrs);
+    for (const m of sortedMilestones) { if (m.age <= age) mult *= (1 + m.salaryChangePct / 100); }
+    const boost = allBoosts.filter(b => b.age <= age).reduce((s,b) => s + b.amount, 0);
+    return effectiveContrib * mult + boost;
+  };
+  const contribAtRetirement = getContribAtAge(mcParams.retirementAge);
+
+  const applyProfile = (profileId) => {
+    const prof = CAREER_PROFILES.find(p => p.id === profileId);
+    if (!prof) return;
+    setMilestones(prof.milestones
+      .filter(m => currentAge + m.yearsFromNow < mcParams.retirementAge)
+      .map(m => ({ age: currentAge + m.yearsFromNow, label: m.label, salaryChangePct: m.salaryChangePct })));
+    setMcParams(p => ({ ...p, selectedProfile: profileId }));
+    setMcResult(null);
+  };
+
+  const addMilestone = () => {
+    const nextAge = milestones.length > 0
+      ? Math.min(mcParams.retirementAge - 1, Math.max(...milestones.map(m => m.age)) + 3)
+      : currentAge + 5;
+    setMilestones(m => [...m, { age: nextAge, label: '', salaryChangePct: 15 }]);
+    setMcParams(p => ({ ...p, selectedProfile: 'custom' }));
+    setMcResult(null);
+  };
+  const removeMilestone = (i) => { setMilestones(m => m.filter((_,j) => j !== i)); setMcResult(null); };
+  const updateMilestone = (i, k, v) => { setMilestones(m => m.map((x,j) => j===i?{...x,[k]:v}:x)); setMcResult(null); };
 
   const runSim = () => {
     setRunning(true);
     setTimeout(() => {
-      const result = runMonteCarlo({
-        currentAge: profile.age,
-        retirementAge: mcParams.retirementAge,
-        currentSavings: totalPortfolio,
-        monthlyContribution: mcParams.monthlyContribution,
-        annualReturnMean: 0.07 + mcParams.extraReturn/100,
-        annualReturnStd: 0.15,
-        runs: 1000,
-      });
-      setMcResult(result);
+      setMcResult(runMonteCarlo({
+        currentAge, retirementAge: mcParams.retirementAge,
+        currentSavings: effectiveSavings, monthlyContribution: effectiveContrib,
+        milestones: sortedMilestones, cashflowBoosts: allBoosts,
+        colaRate: mcParams.colaRate / 100,
+        annualReturnMean: 0.07, annualReturnStd: 0.15, runs: 1000,
+      }));
       setRunning(false);
     }, 50);
   };
 
-  const annualWR = mcParams.withdrawalRate / 100;
-
   const scenarios = useMemo(() => [
-    { label:'Bear (-2%)', mean:-0.02 },
-    { label:'Conservative (4%)', mean:0.04 },
-    { label:'Base (7%)', mean:0.07 },
-    { label:'Bull (10%)', mean:0.10 },
-    { label:'Optimistic (12%)', mean:0.12 },
+    { label:'Bear (-2%)',         mean:-0.02 },
+    { label:'Conservative (4%)', mean: 0.04 },
+    { label:'Base (7%)',          mean: 0.07 },
+    { label:'Bull (10%)',         mean: 0.10 },
+    { label:'Optimistic (12%)',   mean: 0.12 },
   ].map(s => {
     const r = runMonteCarlo({
-      currentAge:profile.age, retirementAge:mcParams.retirementAge,
-      currentSavings:totalPortfolio, monthlyContribution:mcParams.monthlyContribution,
-      annualReturnMean:s.mean, annualReturnStd:0.15, runs:500,
+      currentAge, retirementAge: mcParams.retirementAge,
+      currentSavings: effectiveSavings, monthlyContribution: effectiveContrib,
+      milestones: sortedMilestones, cashflowBoosts: allBoosts,
+      colaRate: mcParams.colaRate / 100, annualReturnMean: s.mean, annualReturnStd: 0.15, runs: 300,
     });
-    return { ...s, median:r.p50, income:r.p50*annualWR };
-  }), [profile.age, mcParams, totalPortfolio, annualWR]);
+    return { ...s, median: r.p50, income: r.p50 * annualWR };
+  }), [currentAge, mcParams, effectiveSavings, effectiveContrib, annualWR, sortedMilestones, allBoosts]);
 
   return (
     <div>
-      <div className="grid g2 gap-6 mb-6">
-        <div className="card">
-          <div className="section-title">Monte Carlo Retirement Simulation</div>
-          <div style={{fontSize:12,color:'#718096',marginBottom:16}}>
-            1,000 random market scenarios · Current portfolio: <span className="bold">{fmtFull(totalPortfolio)}</span>
+      {/* ── Simulation Inputs banner ── */}
+      <div className="card mb-6" style={{background:'#0a1628',border:'1px solid #2a4a7f'}}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="section-title" style={{marginBottom:0,color:'#63b3ed'}}>Simulation Inputs</div>
+          <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,cursor:'pointer'}}>
+            <input type="checkbox" checked={mcParams.useRealData}
+              onChange={e=>setMcParams(p=>({...p,useRealData:e.target.checked}))} />
+            <span style={{color:'#a0aec0'}}>Use live app data</span>
+          </label>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
+          {[
+            ['Starting NW',         fmtFull(effectiveSavings),  mcParams.useRealData?'assets + cash − debt':'portfolio + cash',  '#63b3ed'],
+            ['Investable/mo',       fmtFull(effectiveContrib),  mcParams.useRealData?'from Budget tab':'manual override',         investable<0&&mcParams.useRealData?'#fc8181':'#68d391'],
+            ['Debt payments/mo',    fmtFull(debtMinTotal),      'auto from Debt tab',                                             '#f6ad55'],
+            ['Goal savings/mo',     fmtFull(goalSavings),       'from Budget tab',                                                '#b794f4'],
+          ].map(([label,val,sub,color]) => (
+            <div key={label} style={{background:'#0f1a2e',borderRadius:6,padding:'10px 12px'}}>
+              <div style={{fontSize:11,color:'#4a7fb5',marginBottom:3}}>{label}</div>
+              <div style={{fontSize:15,fontWeight:700,color}}>{val}</div>
+              <div style={{fontSize:10,color:'#4a5568',marginTop:2}}>{sub}</div>
+            </div>
+          ))}
+        </div>
+        {!mcParams.useRealData && (
+          <div className="grid g2 gap-4" style={{marginTop:12}}>
+            <div className="form-group" style={{marginBottom:0}}>
+              <label style={{fontSize:11}}>Monthly contribution ($)</label>
+              <input type="number" min={0} value={mcParams.monthlyContribution}
+                onChange={e=>setMcParams(p=>({...p,monthlyContribution:+e.target.value}))} />
+            </div>
           </div>
-          <div className="grid g2 gap-4 mb-4">
-            <div className="form-group" style={{marginBottom:0}}><label>Target Retirement Age</label>
-              <input type="number" min={profile.age+1} max="85" value={mcParams.retirementAge}
-                onChange={e=>setMcParams(p=>({...p,retirementAge:+e.target.value}))} /></div>
-            <div className="form-group" style={{marginBottom:0}}><label>Monthly Contribution ($)</label>
-              <input type="number" min="0" value={mcParams.monthlyContribution}
-                onChange={e=>setMcParams(p=>({...p,monthlyContribution:+e.target.value}))} /></div>
-            <div className="form-group" style={{marginBottom:0}}><label>Withdrawal Rate (% SWR)</label>
-              <input type="number" min="1" max="10" step="0.5" value={mcParams.withdrawalRate}
-                onChange={e=>setMcParams(p=>({...p,withdrawalRate:+e.target.value}))} /></div>
-            <div className="form-group" style={{marginBottom:0}}><label>Extra Return Adj. (%)</label>
-              <input type="number" min="-5" max="5" step="0.5" value={mcParams.extraReturn}
-                onChange={e=>setMcParams(p=>({...p,extraReturn:+e.target.value}))} /></div>
+        )}
+        {investable < 0 && mcParams.useRealData && (
+          <div style={{marginTop:10,fontSize:12,color:'#fc8181',padding:'6px 10px',background:'#1a0a0a',borderRadius:6}}>
+            Budget tab shows {fmtFull(Math.abs(investable))}/mo shortfall — go to Budget to fix expenses first.
           </div>
-          <button className="btn btn-primary" onClick={runSim} disabled={running}>
-            {running ? 'Running 1,000 simulations…' : 'Run Simulation'}
-          </button>
+        )}
+      </div>
+
+      <div className="grid g2 gap-6">
+        {/* ── Left column ── */}
+        <div>
+          {/* Career profile picker */}
+          <div className="card mb-4">
+            <div className="section-title" style={{marginBottom:6}}>Career Profile</div>
+            <div style={{fontSize:12,color:'#718096',marginBottom:10}}>Seed your promotion timeline — edit rows below.</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+              {CAREER_PROFILES.map(p => (
+                <button key={p.id} className={`btn btn-sm ${mcParams.selectedProfile===p.id?'btn-primary':'btn-secondary'}`}
+                  onClick={() => applyProfile(p.id)}>{p.icon} {p.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Career milestones */}
+          <div className="card mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="section-title" style={{marginBottom:2}}>Career Milestones</div>
+                <div style={{fontSize:11,color:'#718096'}}>Salary jumps → raises investment contributions from that age on.</div>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={addMilestone}>+ Add</button>
+            </div>
+            {milestones.length === 0 ? (
+              <div style={{fontSize:13,color:'#718096',padding:'8px 0'}}>No milestones — pick a career profile or add rows manually.</div>
+            ) : (
+              <table>
+                <thead><tr><th>Age</th><th>Event</th><th>Salary ↑</th><th>Contrib at age</th><th></th></tr></thead>
+                <tbody>
+                  {sortedMilestones.map(m => {
+                    const origIdx = milestones.indexOf(m);
+                    return (
+                      <tr key={origIdx}>
+                        <td><input type="number" min={currentAge+1} max={mcParams.retirementAge-1}
+                          value={m.age} onChange={e=>updateMilestone(origIdx,'age',+e.target.value)} style={{width:60}} /></td>
+                        <td><input value={m.label} onChange={e=>updateMilestone(origIdx,'label',e.target.value)}
+                          placeholder="Senior Engineer" style={{minWidth:130}} /></td>
+                        <td><div className="flex items-center gap-1">
+                          <input type="number" min={1} max={500} value={m.salaryChangePct}
+                            onChange={e=>updateMilestone(origIdx,'salaryChangePct',+e.target.value)} style={{width:55}} />
+                          <span className="gray" style={{fontSize:11}}>%</span>
+                        </div></td>
+                        <td><span className="green" style={{fontSize:12,fontWeight:600}}>{fmtFull(getContribAtAge(m.age))}/mo</span></td>
+                        <td><button className="btn btn-danger btn-sm" onClick={()=>removeMilestone(origIdx)}>×</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Auto financial events */}
+          {allBoosts.length > 0 && (
+            <div className="card mb-4">
+              <div className="section-title" style={{marginBottom:4}}>Financial Events <span style={{fontSize:11,fontWeight:400,color:'#718096'}}>(auto-computed)</span></div>
+              <div style={{fontSize:11,color:'#718096',marginBottom:10}}>When debts clear or goals are funded, freed cash redirects to investments.</div>
+              {allBoosts.map((b,i) => (
+                <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                  padding:'7px 0',borderBottom:'1px solid #1a1f2e',fontSize:13}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:16}}>{b.type==='debt'?'💳':'🎯'}</span>
+                    <div>
+                      <div style={{fontWeight:500}}>{b.label}</div>
+                      <div style={{fontSize:11,color:'#718096'}}>Age {b.age.toFixed(1)}</div>
+                    </div>
+                  </div>
+                  <span style={{color:'#68d391',fontWeight:600}}>+{fmtFull(b.amount)}/mo freed</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Sim parameters */}
+          <div className="card mb-4">
+            <div className="section-title">Parameters</div>
+            <div className="grid g2 gap-4 mb-4">
+              <div className="form-group" style={{marginBottom:0}}>
+                <label>Retire at age</label>
+                <input type="number" min={currentAge+1} max={85} value={mcParams.retirementAge}
+                  onChange={e=>setMcParams(p=>({...p,retirementAge:+e.target.value}))} />
+              </div>
+              <div className="form-group" style={{marginBottom:0}}>
+                <label>Withdrawal rate (%)</label>
+                <input type="number" min={1} max={10} step={0.5} value={mcParams.withdrawalRate}
+                  onChange={e=>setMcParams(p=>({...p,withdrawalRate:+e.target.value}))} />
+              </div>
+              <div className="form-group" style={{marginBottom:0}}>
+                <label>Annual savings growth % <span style={{fontWeight:400,color:'#718096',fontSize:10}}>(contributions ↑ each year)</span></label>
+                <input type="number" min={0} max={8} step={0.5} value={mcParams.colaRate}
+                  onChange={e=>setMcParams(p=>({...p,colaRate:+e.target.value}))} />
+              </div>
+            </div>
+            <div style={{fontSize:12,color:'#718096',marginBottom:12,padding:'8px 10px',background:'#0f1117',borderRadius:6,border:'1px solid #2d3748'}}>
+              Investing <strong style={{color:'#e2e8f0'}}>{fmtFull(effectiveContrib)}/mo</strong> today
+              → <strong style={{color:'#68d391'}}>{fmtFull(contribAtRetirement)}/mo</strong> by retirement
+              · {yearsToRetirement}y · {milestones.length} promotion{milestones.length!==1?'s':''} · {allBoosts.length} financial event{allBoosts.length!==1?'s':''}
+            </div>
+            <button className="btn btn-primary" onClick={runSim} disabled={running}>
+              {running ? 'Running 1,000 simulations…' : 'Run Simulation'}
+            </button>
+          </div>
+
+          {/* Results */}
           {mcResult && (
-            <div className="mt-4">
+            <div className="card">
+              <div style={{background:'#0f1117',border:'1px solid #2d3748',borderRadius:8,
+                padding:'12px 14px',marginBottom:14,fontSize:13,lineHeight:1.75}}>
+                In the <strong style={{color:'#63b3ed'}}>median scenario</strong>, you retire at{' '}
+                {mcParams.retirementAge} with <strong>{fmt(mcResult.p50)}</strong> — enough for{' '}
+                <strong style={{color:'#68d391'}}>{fmtFull(mcResult.p50 * annualWR / 12)}/mo</strong>{' '}
+                at a {mcParams.withdrawalRate}% withdrawal rate.
+                {allBoosts.length > 0 && (
+                  <> Debt payoffs and funded goals free up an additional{' '}
+                  <strong>{fmtFull(allBoosts.reduce((s,b)=>s+b.amount,0))}/mo</strong> over time.</>
+                )}
+              </div>
               <div className="grid g3 gap-3 mb-4">
-                {[['P10 (Pessimistic)',mcResult.p10,'red'],['P50 (Median)',mcResult.p50,'blue'],['P90 (Optimistic)',mcResult.p90,'green']].map(([l,v,c])=>(
+                {[
+                  ['Pessimistic (P10)', mcResult.p10, '#fc8181'],
+                  ['Median (P50)',      mcResult.p50, '#63b3ed'],
+                  ['Optimistic (P90)', mcResult.p90, '#68d391'],
+                ].map(([l,v,color]) => (
                   <div key={l} style={{background:'#0f1117',padding:12,borderRadius:8,border:'1px solid #2d3748'}}>
-                    <div style={{fontSize:11,color:'#718096'}}>{l}</div>
-                    <div style={{fontSize:18,fontWeight:700,color:c==='red'?'#fc8181':c==='green'?'#68d391':'#63b3ed'}}>{fmt(v)}</div>
-                    <div style={{fontSize:11,color:'#718096'}}>{fmtFull(v*annualWR)}/yr income</div>
+                    <div style={{fontSize:11,color:'#718096',marginBottom:4}}>{l}</div>
+                    <div style={{fontSize:18,fontWeight:700,color}}>{fmt(v)}</div>
+                    <div style={{fontSize:11,color:'#718096'}}>{fmtFull(v * annualWR / 12)}/mo income</div>
                   </div>
                 ))}
               </div>
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={mcResult.chartData} margin={{top:5,right:10,bottom:0,left:10}}>
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={mcResult.chartData} margin={{top:16,right:10,bottom:0,left:10}}>
                   <defs>
                     <linearGradient id="mcGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3182ce" stopOpacity={0.4}/>
@@ -1789,6 +2699,14 @@ function ModelsTab({ state }) {
                   <XAxis dataKey="year" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
                   <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:11}} />
+                  {sortedMilestones.map((m,i) => (
+                    <ReferenceLine key={`c${i}`} x={m.age} stroke="#4a5568" strokeDasharray="3 3"
+                      label={{value:`↑${m.salaryChangePct}%`,fill:'#718096',fontSize:8,position:'top'}} />
+                  ))}
+                  {allBoosts.map((b,i) => (
+                    <ReferenceLine key={`b${i}`} x={Math.round(b.age)} stroke={b.type==='debt'?'#f6ad55':'#b794f4'} strokeDasharray="4 2"
+                      label={{value:`+${fmtFull(b.amount)}`,fill:b.type==='debt'?'#f6ad55':'#b794f4',fontSize:8,position:'top'}} />
+                  ))}
                   <Area type="monotone" dataKey="median" stroke="#3182ce" fill="url(#mcGrad)" strokeWidth={2} dot={false} name="Median Path" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -1796,161 +2714,49 @@ function ModelsTab({ state }) {
           )}
         </div>
 
-        <div className="card">
-          <div className="section-title">Scenario Analysis</div>
-          <div style={{fontSize:12,color:'#718096',marginBottom:16}}>
-            Median retirement balance at age {mcParams.retirementAge} under different return assumptions
+        {/* ── Right column ── */}
+        <div>
+          <div className="card mb-4">
+            <div className="section-title">Market Scenario Analysis</div>
+            <div style={{fontSize:12,color:'#718096',marginBottom:16}}>
+              Median portfolio at {mcParams.retirementAge} — all milestones + financial events applied.
+            </div>
+            <table>
+              <thead><tr><th>Scenario</th><th className="tr">Median portfolio</th><th className="tr">Monthly income</th></tr></thead>
+              <tbody>
+                {scenarios.map(s => (
+                  <tr key={s.label}>
+                    <td>{s.label}</td>
+                    <td className="tr bold">{fmt(s.median)}</td>
+                    <td className="tr">{fmtFull(s.income/12)}<span className="gray" style={{fontSize:11}}>/mo</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <table>
-            <thead><tr><th>Scenario</th><th className="tr">Median Portfolio</th><th className="tr">Annual Income ({mcParams.withdrawalRate}% SWR)</th></tr></thead>
-            <tbody>
-              {scenarios.map(s => (
-                <tr key={s.label}>
-                  <td>{s.label}</td>
-                  <td className="tr bold">{fmt(s.median)}</td>
-                  <td className="tr">{fmt(s.income)}<span className="gray" style={{fontSize:11}}>/yr</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <hr className="divider" />
-          <div className="section-title" style={{marginTop:8}}>Savings Rate Impact</div>
-          <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={[500,1000,1500,2000,3000,4000,5000].map(mc => {
-              const r = runMonteCarlo({currentAge:profile.age,retirementAge:mcParams.retirementAge,currentSavings:totalPortfolio,monthlyContribution:mc,annualReturnMean:0.07,annualReturnStd:0.15,runs:200});
-              return {mc:`$${mc/1000}K`,p50:r.p50};
-            })} margin={{top:5,right:10,bottom:0,left:10}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-              <XAxis dataKey="mc" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
-              <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:11}} />
-              <Line type="monotone" dataKey="p50" stroke="#68d391" strokeWidth={2} dot={{fill:'#68d391',r:3}} name="Median at Retirement" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// =============================================================================
-// MARKET TAB
-// =============================================================================
-function MarketTab({ state, dispatch }) {
-  const { assets, apiKeys, news, macro, newsFetchedAt, macroFetchedAt } = state;
-  const [loading, setLoading] = useState({ news:false, macro:false });
-
-  const FRED_SERIES = [
-    { id:'FEDFUNDS', label:'Fed Funds Rate', unit:'%' },
-    { id:'CPIAUCSL', label:'CPI (Inflation)', unit:' index' },
-    { id:'UNRATE',   label:'Unemployment Rate', unit:'%' },
-    { id:'DGS10',    label:'10-Year Treasury', unit:'%' },
-  ];
-
-  const fetchNewsData = useCallback(async () => {
-    if (!apiKeys.finnhub) return;
-    setLoading(l=>({...l,news:true}));
-    const results = {}, errs = {};
-    for (const a of assets.filter(a=>a.assetType!=='crypto'&&a.assetType!=='other').slice(0,8)) {
-      try { results[a.ticker] = await fetchFinnhubNews(a.ticker); await sleep(300); }
-      catch(e) { errs[a.ticker] = e.message; }
-    }
-    const now = new Date().toISOString();
-    dispatch({ type:'SET_NEWS', data: results, fetchedAt: now });
-    apiPost('/api/market-cache', { type: 'news', data: results }).catch(() => {});
-    setLoading(l=>({...l,news:false}));
-  }, [assets, apiKeys.finnhub, dispatch]);
-
-  const fetchMacroData = useCallback(async () => {
-    if (!apiKeys.fred) return;
-    setLoading(l=>({...l,macro:true}));
-    const results = {};
-    for (const s of FRED_SERIES) {
-      try {
-        const data = await fetchFRED(s.id);
-        results[s.id] = data.slice(0,12).reverse();
-      } catch(e) {}
-      await sleep(200);
-    }
-    const now = new Date().toISOString();
-    dispatch({ type:'SET_MACRO', data: results, fetchedAt: now });
-    apiPost('/api/market-cache', { type: 'macro', data: results }).catch(() => {});
-    setLoading(l=>({...l,macro:false}));
-  }, [apiKeys.fred, dispatch]);
-
-  return (
-    <div>
-      <div className="card mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="section-title" style={{marginBottom:0}}>Macro Indicators</div>
-          <div className="flex gap-2 items-center">
-            {loading.macro && <span className="spinner" />}
-            {macroFetchedAt && !loading.macro && <span style={{fontSize:10,color:'#718096'}}>cached {new Date(macroFetchedAt).toLocaleDateString()}</span>}
-            {!apiKeys.fred && <span style={{fontSize:11,color:'#718096'}}>Add FRED API key for live macro data</span>}
-            <button className="btn btn-secondary btn-sm" onClick={fetchMacroData} disabled={loading.macro||!apiKeys.fred}>
-              {loading.macro?'Loading…':'Fetch Macro Data'}
-            </button>
+          <div className="card">
+            <div className="section-title">Contribution Impact</div>
+            <div style={{fontSize:11,color:'#718096',marginBottom:12}}>How starting monthly investment affects median outcome</div>
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={[200,500,1000,1500,2000,3000,5000].map(mc => {
+                const r = runMonteCarlo({
+                  currentAge, retirementAge: mcParams.retirementAge,
+                  currentSavings: effectiveSavings, monthlyContribution: mc,
+                  milestones: sortedMilestones, cashflowBoosts: allBoosts,
+                  colaRate: mcParams.colaRate/100, annualReturnMean:0.07, annualReturnStd:0.15, runs:200,
+                });
+                return { mc: mc>=1000?`$${mc/1000}K`:`$${mc}`, p50: r.p50 };
+              })} margin={{top:5,right:10,bottom:0,left:10}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+                <XAxis dataKey="mc" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={v=>fmt(v)} tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} />
+                <Tooltip formatter={v=>fmtFull(v)} contentStyle={{background:'#1a1f2e',border:'1px solid #2d3748',borderRadius:6,fontSize:11}} />
+                <Line type="monotone" dataKey="p50" stroke="#68d391" strokeWidth={2} dot={{fill:'#68d391',r:3}} name="Median at Retirement" />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
-        <div className="grid g2 gap-4">
-          {FRED_SERIES.map(s => {
-            const obs = macro[s.id];
-            const latest = obs?.[obs.length-1];
-            const prev   = obs?.[obs.length-2];
-            const change = latest&&prev ? latest.value-prev.value : null;
-            return (
-              <div key={s.id} style={{background:'#0f1117',borderRadius:8,padding:14,border:'1px solid #2d3748'}}>
-                <div style={{fontSize:11,color:'#718096',marginBottom:4}}>{s.label}</div>
-                <div style={{fontSize:20,fontWeight:700}}>
-                  {latest ? `${latest.value.toFixed(2)}${s.unit}` : <span className="gray">—</span>}
-                  {change!==null && <span style={{fontSize:13,marginLeft:8,color:change>=0?'#fc8181':'#68d391'}}>{change>=0?'+':''}{change.toFixed(2)}</span>}
-                </div>
-                {obs&&obs.length>1 && (
-                  <ResponsiveContainer width="100%" height={50}>
-                    <LineChart data={obs} margin={{top:4,right:4,bottom:0,left:4}}>
-                      <Line type="monotone" dataKey="value" stroke="#3182ce" strokeWidth={1.5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <div className="section-title" style={{marginBottom:0}}>News — Your Holdings</div>
-          <div className="flex gap-2 items-center">
-            {loading.news && <span className="spinner" />}
-            {newsFetchedAt && !loading.news && <span style={{fontSize:10,color:'#718096'}}>cached {new Date(newsFetchedAt).toLocaleDateString()}</span>}
-            {!apiKeys.finnhub && <span style={{fontSize:11,color:'#718096'}}>Add Finnhub API key for news</span>}
-            <button className="btn btn-secondary btn-sm" onClick={fetchNewsData} disabled={loading.news||!apiKeys.finnhub||assets.length===0}>
-              {loading.news?'Loading…':'Fetch News'}
-            </button>
-          </div>
-        </div>
-        {Object.keys(news).length===0 && (
-          <div className="gray tc" style={{padding:24,fontSize:13}}>
-            {assets.length===0?'Add assets to see relevant news':'Click "Fetch News" to load articles for your holdings'}
-          </div>
-        )}
-        {Object.entries(news).map(([ticker,articles]) => (
-          <div key={ticker} className="mb-6">
-            <div style={{fontSize:13,fontWeight:600,color:'#63b3ed',marginBottom:8}}>{ticker}</div>
-            {articles.length===0 && <div className="gray" style={{fontSize:12}}>No recent news</div>}
-            {articles.map((a,i) => (
-              <div key={i} style={{borderLeft:'2px solid #2d3748',paddingLeft:12,marginBottom:10}}>
-                <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>{a.headline}</div>
-                <div style={{fontSize:11,color:'#718096'}}>
-                  {a.source} · {new Date(a.datetime*1000).toLocaleDateString()}
-                  {a.url && <> · <a href={a.url} target="_blank" rel="noopener" style={{color:'#63b3ed'}}>Read →</a></>}
-                </div>
-                {a.summary && <div style={{fontSize:12,color:'#a0aec0',marginTop:4,lineHeight:1.5}}>{a.summary.slice(0,200)}{a.summary.length>200?'…':''}</div>}
-              </div>
-            ))}
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -2364,6 +3170,12 @@ function App() {
       .catch(() => setAuthChecked(true));
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => dispatch({ type:'SET_TAB', tab: e.detail });
+    window.addEventListener('finpal-nav', handler);
+    return () => window.removeEventListener('finpal-nav', handler);
+  }, [dispatch]);
+
   const handleLogin = async (user) => {
     setAuthUser(user);
     try { const data = await apiGet('/api/me/data'); dispatch({ type:'HYDRATE', payload:data }); } catch(e) {}
@@ -2400,9 +3212,9 @@ function App() {
       case 'Net Worth':  return <NetWorthTab state={state} dispatch={dispatch} />;
       case 'Portfolio':  return <PortfolioTab state={state} dispatch={dispatch} />;
       case 'Debt':       return <DebtTab state={state} dispatch={dispatch} />;
+      case 'Budget':     return <BudgetTab state={state} />;
       case 'Goals':      return <GoalsTab state={state} dispatch={dispatch} />;
       case 'Models':     return <ModelsTab state={state} />;
-      case 'Market':     return <MarketTab state={state} dispatch={dispatch} />;
       case 'AI Agents':  return <AgentsTab state={state} dispatch={dispatch} />;
       default:           return null;
     }
