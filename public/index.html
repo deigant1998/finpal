@@ -1711,7 +1711,18 @@ function DebtTab({ state, dispatch }) {
 // BUDGET TAB
 // =============================================================================
 function BudgetTab({ state }) {
-  const { profile, liabilities } = state;
+  const { profile, liabilities, goals } = state;
+
+  // Max goal savings = sum of monthly amounts actually needed across all goals
+  const goalsTotalNeeded = useMemo(() => {
+    const today = new Date();
+    return goals.reduce((s, g) => {
+      const remaining = Math.max(0, (+(g.targetAmount||g.target_amount||0)) - (+(g.currentSaved||g.current_saved||0)));
+      const months = monthsBetween(today, g.targetDate || g.target_date || '');
+      const needed = months > 0 ? remaining / months : 0;
+      return s + needed;
+    }, 0);
+  }, [goals]);
   const annualIncome = +(profile.annualIncome || profile.annual_income || 0);
   const grossMonthly = Math.round(annualIncome / 12);
 
@@ -1751,7 +1762,11 @@ function BudgetTab({ state }) {
   const afterExp   = takeHome - totalExp;
   const debtMin    = Math.round(liabilities.reduce((s,l) => s + (+(l.minPayment||0)), 0));
   const afterDebt  = afterExp - debtMin;
-  const investable = afterDebt - goalSavings;
+  // Cap goal savings at what goals actually need — surplus flows to investable
+  const effectiveGoalSavings = goalsTotalNeeded > 0
+    ? Math.min(goalSavings, Math.ceil(goalsTotalNeeded))
+    : goalSavings;
+  const investable = afterDebt - effectiveGoalSavings;
 
   // Stacked bar segments (% of gross)
   const pct = v => grossMonthly > 0 ? Math.max(0, Math.min(100, v / grossMonthly * 100)) : 0;
@@ -1762,7 +1777,7 @@ function BudgetTab({ state }) {
     { label:'Food',       value:food,        color:'#f6ad55', opacity:0.7 },
     { label:'Other',      value:other,       color:'#a0aec0' },
     { label:'Debt',       value:debtMin,     color:'#fc8181', opacity:0.7 },
-    { label:'Goals',      value:goalSavings, color:'#b794f4' },
+    { label:'Goals',      value:effectiveGoalSavings, color:'#b794f4' },
     { label:'Investable', value:Math.max(0,investable), color:'#68d391' },
   ];
 
@@ -1860,18 +1875,43 @@ function BudgetTab({ state }) {
 
           {totalRow('After debt', afterDebt)}
 
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
-            <div>
-              <span style={{fontSize:14,color:'#a0aec0'}}>− Goal savings</span>
-              <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>feeds Goals tab</span>
+          <div style={{padding:'8px 0',borderBottom:'1px solid #1a1f2e'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <span style={{fontSize:14,color:'#a0aec0'}}>− Goal savings</span>
+                <span style={{fontSize:11,color:'#4a5568',marginLeft:8}}>
+                  {goalsTotalNeeded > 0 && goalSavings > Math.ceil(goalsTotalNeeded)
+                    ? `capped at ${fmtFull(Math.ceil(goalsTotalNeeded))} (goals need)`
+                    : 'feeds Goals tab'}
+                </span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:13,color:'#718096'}}>$</span>
+                <input type="number" min="0"
+                  max={goalsTotalNeeded > 0 ? Math.ceil(goalsTotalNeeded) : undefined}
+                  value={goalSavings}
+                  onChange={e => setGoalSavings(
+                    goalsTotalNeeded > 0
+                      ? Math.min(Math.max(0, +e.target.value), Math.ceil(goalsTotalNeeded))
+                      : Math.max(0, +e.target.value)
+                  )}
+                  style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
+                <span style={{fontSize:13,color:'#718096'}}>/mo</span>
+              </div>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <span style={{fontSize:13,color:'#718096'}}>$</span>
-              <input type="number" min="0" value={goalSavings}
-                onChange={e=>setGoalSavings(Math.max(0,+e.target.value))}
-                style={{width:100,textAlign:'right',fontSize:14,fontWeight:600}} />
-              <span style={{fontSize:13,color:'#718096'}}>/mo</span>
-            </div>
+            {goalsTotalNeeded > 0 && goalSavings >= Math.ceil(goalsTotalNeeded) - 1 && (
+              <div style={{fontSize:11,color:'#68d391',marginTop:4}}>
+                Capped at {fmtFull(Math.ceil(goalsTotalNeeded))}/mo — the exact amount your goals need
+              </div>
+            )}
+            {goalsTotalNeeded > 0 && goalSavings < goalsTotalNeeded * 0.95 && (
+              <div style={{fontSize:11,color:'#f6ad55',marginTop:4}}>
+                Goals need {fmtFull(Math.ceil(goalsTotalNeeded))}/mo — you're {fmtFull(Math.ceil(goalsTotalNeeded) - goalSavings)} short
+              </div>
+            )}
+            {goals.length === 0 && (
+              <div style={{fontSize:11,color:'#4a5568',marginTop:4}}>Add goals in the Goals tab to auto-cap this</div>
+            )}
           </div>
 
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 0 4px'}}>
@@ -1901,7 +1941,7 @@ function BudgetTab({ state }) {
               ['Take-home',         takeHome,      '#e2e8f0'],
               ['Total expenses',   -totalExp,      '#f6ad55'],
               ['Debt payments',    -debtMin,       '#fc8181'],
-              ['Goal savings',     -goalSavings,   '#b794f4'],
+              ['Goal savings',     -effectiveGoalSavings,   '#b794f4'],
               ['Investable',        investable,    investable>=0?'#68d391':'#fc8181'],
             ].map(([label, val, color]) => (
               <div key={label} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'6px 0',borderBottom:'1px solid #1a1f2e'}}>
@@ -1919,7 +1959,7 @@ function BudgetTab({ state }) {
               ['Food',        food],
               ['Other',       other],
               ['Debt',        debtMin],
-              ['Goals',       goalSavings],
+              ['Goals',       effectiveGoalSavings],
             ].map(([label, val]) => (
               <div key={label} style={{marginBottom:8}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
@@ -1938,7 +1978,7 @@ function BudgetTab({ state }) {
             {(() => {
               const needs = housing + transport + food + debtMin;
               const wants = other;
-              const savings = goalSavings + Math.max(0,investable);
+              const savings = effectiveGoalSavings + Math.max(0,investable);
               return [
                 ['Needs (target ≤50%)',   needs,   pct(needs)   <= 50 ],
                 ['Wants (target ≤30%)',   wants,   pct(wants)   <= 30 ],
@@ -2002,20 +2042,41 @@ function GoalsTab({ state, dispatch }) {
     }).sort((a, b) => b.urgency - a.urgency);
   }, [goals, today]);
 
-  // Allocate monthly budget across goals by urgency weight
+  // Allocate monthly budget across goals by urgency weight, with surplus redistribution
   const allocations = useMemo(() => {
-    const totalNeeded = enriched.reduce((s,g) => s + (isFinite(g.monthlyNeeded) ? g.monthlyNeeded : 0), 0);
-    if (totalNeeded <= 0) return {};
+    if (!enriched.length) return {};
+    const finite = enriched.filter(g => isFinite(g.monthlyNeeded));
+    if (!finite.length) return {};
+
     const allocs = {};
-    if (totalNeeded <= monthlyBudget) {
-      enriched.forEach(g => { allocs[g.id] = isFinite(g.monthlyNeeded) ? g.monthlyNeeded : 0; });
-    } else {
-      const totalUrgency = enriched.reduce((s,g) => s + g.urgency, 0);
-      enriched.forEach(g => {
-        const raw = totalUrgency > 0 ? (g.urgency / totalUrgency) * monthlyBudget : 0;
-        allocs[g.id] = Math.min(raw, isFinite(g.monthlyNeeded) ? g.monthlyNeeded : raw);
-      });
+    enriched.forEach(g => { allocs[g.id] = 0; });
+
+    // Round 1: proportional by urgency, capped at each goal's actual need
+    const totalUrgency = enriched.reduce((s,g) => s + g.urgency, 0);
+    let remaining = monthlyBudget;
+    const shortfall = {}; // goals still needing more after round 1
+
+    enriched.forEach(g => {
+      const need = isFinite(g.monthlyNeeded) ? g.monthlyNeeded : 0;
+      const share = totalUrgency > 0 ? (g.urgency / totalUrgency) * monthlyBudget : 0;
+      const alloc = Math.min(share, need);
+      allocs[g.id] = alloc;
+      remaining -= alloc;
+      if (need > alloc) shortfall[g.id] = need - alloc;
+    });
+
+    // Round 2: redistribute leftover to goals still short, highest urgency first
+    const needMore = [...enriched]
+      .filter(g => shortfall[g.id] > 0)
+      .sort((a, b) => b.urgency - a.urgency);
+
+    for (const g of needMore) {
+      if (remaining <= 0.01) break;
+      const extra = Math.min(remaining, shortfall[g.id]);
+      allocs[g.id] += extra;
+      remaining -= extra;
     }
+
     return allocs;
   }, [enriched, monthlyBudget]);
 
@@ -2100,9 +2161,11 @@ function GoalsTab({ state, dispatch }) {
                 <div className="card-title">Total needed/mo</div>
                 <div className="card-value" style={{color:'#e2e8f0'}}>{isFinite(totalNeeded)?fmtFull(totalNeeded):'—'}</div>
               </div>
-              <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px'}}>
-                <div className="card-title">{surplus >= 0 ? 'Surplus/mo' : 'Shortfall/mo'}</div>
-                <div className="card-value" style={{color:surplus>=0?'#68d391':'#fc8181'}}>{fmtFull(Math.abs(surplus))}</div>
+              <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px',
+                background: surplus < 0 ? '#1a0a0a' : undefined,
+                border: surplus < 0 ? '1px solid #9b2c2c' : undefined}}>
+                <div className="card-title">{surplus < 0 ? 'Shortfall/mo' : 'Fully allocated'}</div>
+                <div className="card-value" style={{color:surplus<0?'#fc8181':'#68d391'}}>{surplus<0?fmtFull(Math.abs(surplus)):'✓'}</div>
               </div>
               <div className="card card-sm" style={{flex:1,minWidth:120,padding:'10px 14px'}}>
                 <div className="card-title">Liquid savings</div>
@@ -2111,14 +2174,25 @@ function GoalsTab({ state, dispatch }) {
             </div>
 
             {/* Budget allocation bar */}
-            <div style={{marginBottom:4,fontSize:11,color:'#718096'}}>Budget allocation</div>
+            <div style={{marginBottom:4,fontSize:11,color:'#718096'}}>Goal allocation</div>
             <div className="progress-track" style={{height:10,marginBottom:4}}>
-              <div className="progress-fill" style={{
-                width:`${Math.min(100,(totalAllocated/monthlyBudget)*100)}%`,
-                background: totalAllocated > monthlyBudget ? '#fc8181' : '#68d391',
-              }} />
+              <div style={{display:'flex',height:'100%',borderRadius:6,overflow:'hidden'}}>
+                <div style={{width:`${Math.min(100,(totalAllocated/monthlyBudget)*100)}%`,background:'#3182ce',transition:'width 0.3s'}} />
+                {surplus > 0 && <div style={{width:`${Math.min(100,(surplus/monthlyBudget)*100)}%`,background:'#68d391',transition:'width 0.3s'}} />}
+              </div>
             </div>
-            <div style={{fontSize:11,color:'#718096'}}>{fmtFull(totalAllocated)} allocated of {fmtFull(monthlyBudget)} budget</div>
+            <div style={{fontSize:11,color:'#718096',display:'flex',justifyContent:'space-between'}}>
+              <span>{fmtFull(totalAllocated)} to goals</span>
+              {surplus > 0 && <span style={{color:'#68d391'}}>{fmtFull(surplus)} → investing</span>}
+              {surplus < 0 && <span style={{color:'#fc8181'}}>{fmtFull(Math.abs(surplus))} short</span>}
+            </div>
+            {surplus > 0 && (
+              <div style={{fontSize:12,color:'#68d391',marginTop:8,padding:'6px 10px',background:'#0a1f0a',borderRadius:6,border:'1px solid #276749'}}>
+                All goals fully funded. {fmtFull(surplus)}/mo redirects to investments — you can reduce your goal savings in the{' '}
+                <button style={{color:'#68d391',background:'none',border:'none',cursor:'pointer',padding:0,textDecoration:'underline',fontSize:12}}
+                  onClick={()=>window.dispatchEvent(new CustomEvent('finpal-nav',{detail:'Budget'}))}>Budget tab</button>.
+              </div>
+            )}
           </>
         )}
       </div>
