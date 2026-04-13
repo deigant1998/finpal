@@ -146,6 +146,13 @@ function initDB() {
       fetched_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE(user_id, cache_type)
     );
+
+    CREATE TABLE IF NOT EXISTS model_settings (
+      user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      params      TEXT    NOT NULL DEFAULT '{}',
+      milestones  TEXT    NOT NULL DEFAULT '[]',
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // ─── Migrations (idempotent, safe to run every startup) ──────────────────────
@@ -536,6 +543,28 @@ function saveMarketCache(userId, type, data) {
   `).run(userId, type, JSON.stringify(data));
 }
 
+// ─── Model settings ───────────────────────────────────────────────────────────
+
+function getModelSettings(userId) {
+  const row = db.prepare('SELECT params, milestones FROM model_settings WHERE user_id = ?').get(userId);
+  if (!row) return { params: {}, milestones: [] };
+  return {
+    params:     JSON.parse(row.params     || '{}'),
+    milestones: JSON.parse(row.milestones || '[]'),
+  };
+}
+
+function saveModelSettings(userId, { params, milestones }) {
+  db.prepare(`
+    INSERT INTO model_settings (user_id, params, milestones, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      params     = excluded.params,
+      milestones = excluded.milestones,
+      updated_at = excluded.updated_at
+  `).run(userId, JSON.stringify(params || {}), JSON.stringify(milestones || []));
+}
+
 // ─── Full data load (single round-trip for page load) ────────────────────────
 
 function getAllUserData(userId) {
@@ -547,8 +576,9 @@ function getAllUserData(userId) {
     goals:       getGoals(userId),
     apiKeys:     getApiKeys(userId),
     snapshots:   getSnapshots(userId),
-    agentCache:  getAgentCache(userId),
-    marketCache: getMarketCache(userId),
+    agentCache:    getAgentCache(userId),
+    marketCache:   getMarketCache(userId),
+    modelSettings: getModelSettings(userId),
   };
 }
 
@@ -576,6 +606,8 @@ module.exports = {
   getAgentCache, saveAgentCache,
   // Market cache
   getMarketCache, saveMarketCache,
+  // Model settings
+  getModelSettings, saveModelSettings,
   // Aggregate
   getAllUserData,
 };

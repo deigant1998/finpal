@@ -2518,6 +2518,35 @@ function ModelsTab({ state }) {
   const [milestones, setMilestones] = useState([]);
   const [mcResult, setMcResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Load persisted settings on mount
+  useEffect(() => {
+    fetch('/api/model-settings').then(r => r.json()).then(data => {
+      if (data.params && Object.keys(data.params).length > 0) {
+        setMcParams(p => ({ ...p, ...data.params }));
+      }
+      if (Array.isArray(data.milestones) && data.milestones.length > 0) {
+        setMilestones(data.milestones);
+      }
+      setSettingsLoaded(true);
+    }).catch(() => setSettingsLoaded(true));
+  }, []);
+
+  // Auto-save whenever params or milestones change (skip the initial mount values)
+  const saveTimerRef = React.useRef(null);
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      fetch('/api/model-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: mcParams, milestones }),
+      });
+    }, 800);
+    return () => clearTimeout(saveTimerRef.current);
+  }, [mcParams, milestones, settingsLoaded]);
 
   // Live-data toggle: when on, use budget-derived investable + net worth as starting point
   const effectiveContrib  = mcParams.useRealData && investable > 0 ? investable : mcParams.monthlyContribution;

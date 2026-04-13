@@ -404,6 +404,19 @@ app.post('/api/market-cache', requireAuth, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ─── Model settings ───────────────────────────────────────────────────────────
+
+app.get('/api/model-settings', requireAuth, (req, res) => {
+  res.json(db.getModelSettings(req.session.userId));
+});
+
+app.post('/api/model-settings', requireAuth, (req, res) => {
+  try {
+    db.saveModelSettings(req.session.userId, req.body);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ─── SPA catch-all — serve index.html for any non-API route ──────────────────
 
 app.get('*', (req, res) => {
